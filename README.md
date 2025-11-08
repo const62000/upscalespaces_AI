@@ -8,16 +8,16 @@ REQUIREMENTS:
 ## ROUTES
 
 - /delay
-  -- ANALYZES FOR DELAY CONSTRAINTS AND POTENTIAL RECOVERY METHODS
-  **input_params** : *"file"*: .xer file format only
-  **output_code** : *202*: file accepted and processing in background (**out_params** -> 'task_id', 'data_key')
+  - ANALYZES FOR DELAY CONSTRAINTS AND POTENTIAL RECOVERY METHODS
+  - **input_params** : *"file"*: .xer file format only
+  - **output_code** : *202*: file accepted and processing in background (**out_params** -> 'task_id', 'data_key')
    *400*: Bad request due to error in input 
    *200*: Return Cached analysis response if file was processed successfully in the last 5 hours
 
 - /overall_report
-  ANALYZES FOR OVERALL REPORT FOR THE PROJECT
-  **input_params** : *"file"* : .xer file format only,*"images"*(Optional): max 10 images of .png , .jpg or .jpeg
-  **output_code** : *202*: file accepted and processing in background (**out_params** -> 'task_id', 'data_key')
+  - ANALYZES FOR OVERALL REPORT FOR THE PROJECT
+  - **input_params** : *"file"* : .xer file format only,*"images"*(Optional): max 10 images of .png , .jpg or .jpeg
+  - **output_code** : *202*: file accepted and processing in background (**out_params** -> 'task_id', 'data_key')
   *400*: Bad request due to error in input 
   *200*: Return Cached analysis response if file was processed successfully in the last 5 hours
 
