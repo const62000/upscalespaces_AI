@@ -8,7 +8,7 @@ REQUIREMENTS:
 ## ROUTES
 
 - /delay
-  ANALYZES FOR DELAY CONSTRAINTS AND POTENTIAL RECOVERY METHODS
+  -- ANALYZES FOR DELAY CONSTRAINTS AND POTENTIAL RECOVERY METHODS
   **input_params** : *"file"*: .xer file format only
   **output_code** : *202*: file accepted and processing in background (**out_params** -> 'task_id', 'data_key')
    *400*: Bad request due to error in input 
