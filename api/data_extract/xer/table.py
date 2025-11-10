@@ -3,11 +3,11 @@ import json
 from datetime import datetime
 import logging
 
-ordered_dict = defaultdict(list)
 class construct_table():
     def __init__(self , xer_doc , mode = "default"):
         self.xer_doc =  xer_doc
         self.table_names: list =  self.xer_doc.get_table_names()
+        self.ordered_dict = defaultdict(list)
         #tables needed : PROJECT , PROJWBS , TASK , TASKPRED , RSRC , TASKRSRC , CALENDAR
         
         self.file_name =  self.xer_doc.file_name
@@ -309,75 +309,104 @@ class construct_table():
         return prj_object
 
     def unified(self):
-        projects = self.project().get(f"project_id_{self.proj_id[0]}")
-        proj_wbs = self.proj_wbs().get(f"project_id_{self.proj_id[0]}")
-        tasks:list = self.task().get(f"project_id_{self.proj_id[0]}")  #contains list[dict] of all tasks
-        task_preds = self.task_pred().get(f"project_id_{self.proj_id[0]}")
-        rsrcs = self.rsrc().get(f"project_id_{self.proj_id[0]}")
-        task_rsrcs = self.task_rsrc().get(f"project_id_{self.proj_id[0]}")
-        calendars = self.calendar().get(f"project_id_{self.proj_id[0]}")
+        if "PROJECT" in self.table_names:
+           projects = self.project().get(f"project_id_{self.proj_id[0]}")
+           project_by_id = {row["proj_id"]: row for row in projects}
+        else:
+            projects =[]
+            project_by_id ={}
+        if "PROJWBS" in self.table_names:
+           proj_wbs = self.proj_wbs().get(f"project_id_{self.proj_id[0]}")
+           wbs_by_id = {row["wbs_id"]: row for row in proj_wbs}
+        else:
+             proj_wbs =[]
+             wbs_by_id = {}
+        if "TASK" in self.table_names:
+           tasks:list = self.task().get(f"project_id_{self.proj_id[0]}")  #contains list[dict] of all tasks
+           task_by_id = {row["task_id"]: row for row in tasks}
+        else:
+            tasks = []
+            task_by_id ={}
+        if "TASKPRED" in self.table_names:
+           task_preds = self.task_pred().get(f"project_id_{self.proj_id[0]}")
+           tp_by_id = {row["task_id"]: row for row in task_preds}
+        else:
+            task_preds =[]
+            tp_by_id ={}
+        if "RSRC" in self.table_names:
+           rsrcs = self.rsrc().get(f"project_id_{self.proj_id[0]}")
+           rsrc_by_id = {row["rsrc_id"]: row for row in rsrcs}
+        else:
+            rsrcs =[]
+            rsrc_by_id ={}
+        if "TASKRSRC" in self.table_names:
+           task_rsrcs = self.task_rsrc().get(f"project_id_{self.proj_id[0]}")
+           taskrsrc_by_id = {row["rsrc_id"]: row for row in task_rsrcs}
+        else:
+            task_rsrcs =[]
+            taskrsrc_by_id ={}
+        if "CALENDAR" in self.table_names:
+           calendars = self.calendar().get(f"project_id_{self.proj_id[0]}")
+           cal_by_id = {row["clndr_id"]: row for row in calendars}
+        else:
+            calendars = []
+            cal_by_id ={}
+
+        if tasks:
+            for task in tasks:
+                wbs_id = task.get("wbs_id")
+                task_id =  task.get("task_id")
+                proj_id = task.get("proj_id")
         
-        wbs_by_id = {row["wbs_id"]: row for row in proj_wbs}
-        rsrc_by_id = {row["rsrc_id"]: row for row in rsrcs}
-        cal_by_id = {row["clndr_id"]: row for row in calendars}
-        tp_by_id = {row["task_id"]: row for row in task_preds}
-        project_by_id = {row["proj_id"]: row for row in projects}
-        taskrsrc_by_id = {row["rsrc_id"]: row for row in task_rsrcs}
-        task_by_id = {row["task_id"]: row for row in tasks}
+                if wbs_by_id and (wbs_id in wbs_by_id.keys()):
+                    task["wbs"] = wbs_by_id[wbs_id]
+                if tp_by_id and (task_id in tp_by_id.keys()):
+                    task["taskpred"] =  tp_by_id[task_id]
+                if project_by_id and (proj_id in project_by_id.keys()):
+                    task["project"] =  project_by_id[proj_id]
 
-        for task in tasks:
-            wbs_id = task.get("wbs_id")
-            task_id =  task.get("task_id")
-            proj_id = task.get("proj_id")
-    
-            if wbs_id in wbs_by_id.keys():
-                task["wbs"] = wbs_by_id[wbs_id]
-            if task_id in tp_by_id.keys():
-                task["taskpred"] =  tp_by_id[task_id]
-            if proj_id in project_by_id.keys():
-                task["project"] =  project_by_id[proj_id]
 
-            
-
-        for tr in task_rsrcs:
-            rsrc: int = tr.get("rsrc_id")
-            if rsrc:
-                clndr_id = taskrsrc_by_id[rsrc].get("clndr_id")
-                if clndr_id in cal_by_id.keys():
-                    tr["calendar"] = cal_by_id[clndr_id]
-
+        
         task_resources = {}  ##contains taskrsrcs + resources  .. task_id is dict key
-        for tr in task_rsrcs:
-            task_id = tr.get("task_id")
-            rsrc_id = tr.get("rsrc_id")
-            
-            if task_id and (task_id in task_by_id):
-                rs =  rsrc_by_id[rsrc_id]
-                tr["rsrc_name"] = rs.get("rsrc_name")
-                tr["rsrc_short_name"] =  rs.get("rsrc_short_name")
-                tr["rsrc_type"] = rs.get("rsrc_type")
-                tr["def_qty_per_hr"] =  rs.get("def_qty_per_hr")
-                tr["cost_qty_type"] =  rs.get("cost_qty_type")
+        if task_rsrcs:
+            for tr in task_rsrcs:
+                rsrc: int = tr.get("rsrc_id")
+                if rsrc:
+                    clndr_id = taskrsrc_by_id[rsrc].get("clndr_id")
+                    if clndr_id in cal_by_id.keys():
+                        tr["calendar"] = cal_by_id[clndr_id]
+            for tr in task_rsrcs:
+                task_id = tr.get("task_id")
+                rsrc_id = tr.get("rsrc_id")
+                
+                if task_id and rsrc_by_id and task_by_id and (task_id in task_by_id):
+                    rs =  rsrc_by_id[rsrc_id]
+                    tr["rsrc_name"] = rs.get("rsrc_name")
+                    tr["rsrc_short_name"] =  rs.get("rsrc_short_name")
+                    tr["rsrc_type"] = rs.get("rsrc_type")
+                    tr["def_qty_per_hr"] =  rs.get("def_qty_per_hr")
+                    tr["cost_qty_type"] =  rs.get("cost_qty_type")
+    
+    
+                    task_resources[task_id] =  tr
 
-
-                task_resources[task_id] =  tr
-
-        
-        for task in tasks:
-            task_id = task["task_id"]
-            task["task_resources"] = task_resources.get(task_id)
-
-        for task in tasks:
-            clndr_id = task.get("clndr_id")
-            if clndr_id in cal_by_id:
-                task["calendar"] = cal_by_id[clndr_id]
+        if tasks:
+            for task in tasks:
+                task_id = task["task_id"]
+                if task_resources:
+                   task["task_resources"] = task_resources.get(task_id)
+    
+            for task in tasks:
+                clndr_id = task.get("clndr_id")
+                if cal_by_id and (clndr_id in cal_by_id):
+                    task["calendar"] = cal_by_id[clndr_id]
+              
           
-
-        for t in tasks:
-            ordered_dict[f"wbs_id_{t['wbs_id']}"].append(t)
+            for t in tasks:
+                self.ordered_dict[f"wbs_id_{t['wbs_id']}"].append(t)
         ##summary : tasks is fact table , list[dict] that contains "wbs", "taskpred"[opt] , "project", "task_rsrc:tskrsrc + rsrc"[opt] , "calendar"
         #ordered dict : tasks are grouped by wbs_id
-        return tasks ,  ordered_dict   ##tasks: list ,  ordered_dict : dict
+        return tasks ,  self.ordered_dict   ##tasks: list ,  ordered_dict : dict
 
 
 
