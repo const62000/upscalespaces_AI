@@ -389,6 +389,8 @@ class construct_table():
     
     
                     task_resources[task_id] =  tr
+                else:
+                    task_resources[task_id] = tr
 
         if tasks:
             for task in tasks:
