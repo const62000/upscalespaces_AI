@@ -99,7 +99,7 @@ class construct_table():
             for p in prj:
                 if self.mode =="delay" and p.get("status_code") == "TK_Complete":
                     continue
-                if p.get("task_type") == "TT_Task" or "TT_Rsrc":
+                if p.get("task_type") == "TT_Task" or p.get("task_type") == "TT_Rsrc":
                     if p.get("task_name") in task_names.keys() and not None:
                         d1  =  datetime.strptime(task_names[p.get("task_name")] , "%Y-%m-%d %H:%M")
                         d2  =  datetime.strptime(p.get("target_start_date"), "%Y-%m-%d %H:%M") 
