@@ -39,6 +39,8 @@ def drone_task(file_path: str , xer_key , cache_key , video_path: str):
 
             if os.path.exists(file_path):
                os.remove(file_path)
+            if not tasks_grouped:
+               return "No tasks found in the provided xer file."
 
             analysis = {}
             completed_wbs = 0

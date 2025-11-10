@@ -32,7 +32,8 @@ def risk_task(file_path: str , cache_key:str):
         _ , tasks_grouped = structured_doc.unified() # list of unified table per task, grouped by wbs_id
         if os.path.exists(file_path):
            os.remove(file_path)
-    
+        if not tasks_grouped:
+            return "No tasks found in the provided xer file."
         analysis = {}
         completed_wbs = 0
         for wbs_id , tasks in tasks_grouped.items():

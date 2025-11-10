@@ -39,7 +39,8 @@ def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = N
            
             if os.path.exists(file_path):
                os.remove(file_path)
-
+            if not tasks_grouped:
+               return "No tasks found in the provided xer file."
             analysis = {}
             completed_wbs = 0
             for wbs_id , tasks in tasks_grouped.items():
