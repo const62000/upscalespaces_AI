@@ -15,6 +15,7 @@ import time
 import cv2
 from langchain_google_genai import ChatGoogleGenerativeAI
 from decord import VideoReader , cpu
+from django.conf import settings
 
 load_dotenv()
 
@@ -143,26 +144,30 @@ def _call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= N
 
 
 def call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= None , video_path:str = None):
-    media_modes =["vid", "img"]
-    if mode in media_modes:
-        gemini_queue = django_rq.get_queue('gemini')
-        job = gemini_queue.enqueue(_call_llm, mode , human_msg , system_msg , image_paths, video_path )
+    if settings.TEST_MODE:
+            return _call_llm(mode , human_msg , system_msg , image_paths , video_path)
+    
     else:
-        gpt_queue = django_rq.get_queue('gpt')
-        job = gpt_queue.enqueue(_call_llm, mode , human_msg , system_msg)
+        media_modes =["vid", "img"]
+        if mode in media_modes:
+            gemini_queue = django_rq.get_queue('gemini')
+            job = gemini_queue.enqueue(_call_llm, mode , human_msg , system_msg , image_paths, video_path )
+        else:
+            gpt_queue = django_rq.get_queue('gpt')
+            job = gpt_queue.enqueue(_call_llm, mode , human_msg , system_msg)
 
-    timeout = 60 * 30 # 30 mins (in secs) timeout
-    start = time.time()
+        timeout = 60 * 30 # 30 mins (in secs) timeout
+        start = time.time()
 
-    while not job.is_finished and not job.is_failed:
-        if (time.time() - start) > timeout:
-            logging.warning("error:  Failed to generate analysis at this time. [due to queue timeout error]")
-            return AIMessage(content="error: Failed to generate analysis at this time" , error= True).model_dump()
-        time.sleep(0.5)
-        job.refresh()
-    if job.is_failed:
-        logging.warning("error: Failed to generate analysis at this time.  [due to failed job in queue]")
-        return AIMessage(content="error: Failed to generate analysis at this time." , error=True).model_dump()
-    logging.warning(f"Waited for {round(time.time()- start , 2)}s to get LLM result from job")
-    ai_msg = job.result
-    return ai_msg
+        while not job.is_finished and not job.is_failed:
+            if (time.time() - start) > timeout:
+                logging.warning("error:  Failed to generate analysis at this time. [due to queue timeout error]")
+                return AIMessage(content="error: Failed to generate analysis at this time" , error= True).model_dump()
+            time.sleep(0.5)
+            job.refresh()
+        if job.is_failed:
+            logging.warning("error: Failed to generate analysis at this time.  [due to failed job in queue]")
+            return AIMessage(content="error: Failed to generate analysis at this time." , error=True).model_dump()
+        logging.warning(f"Waited for {round(time.time()- start , 2)}s to get LLM result from job")
+        ai_msg = job.result
+        return ai_msg
