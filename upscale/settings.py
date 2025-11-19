@@ -114,8 +114,8 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 
  
 MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -200,4 +200,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3002",
     "https://upscalespaces.co.uk",
+    "http://127.0.0.1:3002",
 ]
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3002",
+    "http://127.0.0.1:3002",
+    "https://upscalespaces.co.uk",
+]
+CORS_ALLOW_CREDENTIALS = True
