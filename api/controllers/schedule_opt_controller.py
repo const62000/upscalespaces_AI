@@ -12,7 +12,6 @@ from celery import shared_task
 from ..data_extract.xer.table import construct_table
 from rest_framework.parsers import MultiPartParser, FormParser , FileUploadParser
 import hashlib
-from app.services.schedule_opt import schedule_opt_service
 import time
 import json
 import tiktoken
@@ -25,6 +24,7 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 @shared_task(queue = "sch_queue" , rate_limit='10/m') 
 def sch_opt_task(file_path: str , cache_key):
+        from app.services.schedule_opt import schedule_opt_service
         start_time = time.time()
         xer_doc = xer_parser(file_path)  #List
         structured_doc =  construct_table(xer_doc , mode = "delay")  ##delay is used to filter out incomplete tasks

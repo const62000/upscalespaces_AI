@@ -16,7 +16,6 @@ import hashlib
 import time
 import json
 import tiktoken
-from app.services.delay_analysis import delay_analysis_service
 import secrets
 import string
 
@@ -26,6 +25,7 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 @shared_task(queue = "delay_queue" ,rate_limit='10/m')
 def delay_task(file_path: str , cache_key:str):
+        from app.services.delay_analysis import delay_analysis_service
         start_time = time.time()
         xer_doc = xer_parser(file_path)  #List
         structured_doc =  construct_table(xer_doc , mode = "delay")

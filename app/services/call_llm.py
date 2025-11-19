@@ -14,8 +14,12 @@ import django_rq
 import time
 import cv2
 from langchain_google_genai import ChatGoogleGenerativeAI
-from decord import VideoReader , cpu
 from django.conf import settings
+try:
+    from decord import VideoReader, cpu  # optional dependency for video processing
+    _DECORD_AVAILABLE = True
+except ImportError:
+    _DECORD_AVAILABLE = False
 
 load_dotenv()
 
@@ -79,6 +83,10 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
             raise e
     elif mode == "vid":
         logging.warning("calling video analyzer llm")
+        if not _DECORD_AVAILABLE:
+            raise RuntimeError(
+                "decord is not installed. Install 'decord' to enable video analysis."
+            )
         fps = 1.0
         fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
 

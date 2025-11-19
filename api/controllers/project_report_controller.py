@@ -11,8 +11,7 @@ import os
 from django.core.cache import cache
 from celery import shared_task
 from ..data_extract.xer.table import construct_table
-from app.services.project_report import project_report_service
-from app.services.image_analyzer import img_analyzer
+from app.prompts.proj_report import prompt
 from app.prompts.proj_report import prompt
 from rest_framework.parsers import MultiPartParser, FormParser
 import hashlib
@@ -30,6 +29,8 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 @shared_task(queue = "report_queue" , rate_limit='10/m')  ##controls num of request, that can be made.. if it surpasses 5 it lines it up in queue
 def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = None):
+        from app.services.project_report import project_report_service
+        from app.services.image_analyzer import img_analyzer
         start_time = time.time()
         summary_without_img = cache.get(xer_key)
         if not summary_without_img:

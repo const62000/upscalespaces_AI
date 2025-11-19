@@ -1,4 +1,5 @@
 from django.urls import path
+from ..controllers import root
 from ..controllers import delay_analysis_controller  as delay
 from ..controllers import risk_forecast_con as risk
 from ..controllers import project_report_controller as p
@@ -8,6 +9,7 @@ from ..controllers import task_status
 
 
 urlpatterns =  [
+    path("", root.index, name="root"),
     path("delay" , delay.delay_analysis_controller,  name = "delay" ) , 
     path("overall_report" , p.progress_report_controller , name = "overall_report"),
     path("risk_forecast" , risk.risk_forecast_controller , name = "risk_forecast"),

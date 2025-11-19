@@ -2,6 +2,7 @@ from langchain_core.tools import tool
 from langgraph.graph import StateGraph ,MessagesState, END , START
 from langchain_core.messages import AIMessage, HumanMessage , SystemMessage , ToolMessage
 from ..tables_docs import *
+from typing_extensions import Annotated
 from dotenv import load_dotenv
 import logging
 from .call_llm import call_llm , calculator , data_analyst

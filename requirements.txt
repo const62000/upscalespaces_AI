@@ -19,3 +19,4 @@ django-rq
 numpy
 decord
 opencv-python-headless
+django-cors-headers

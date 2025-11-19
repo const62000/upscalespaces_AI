@@ -11,8 +11,6 @@ import os
 from django.core.cache import cache
 from celery import shared_task
 from ..data_extract.xer.table import construct_table
-from app.services.project_report import project_report_service
-from app.services.video_analyzer import video_analyzer
 from app.prompts.proj_report import prompt
 from rest_framework.parsers import MultiPartParser, FormParser
 import hashlib
@@ -29,6 +27,8 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 @shared_task(queue = "drone_queue" , rate_limit='10/m')  ##controls num of request, that can be made.. if it surpasses 5 it lines it up in queue
 def drone_task(file_path: str , xer_key , cache_key , video_path: str):
+        from app.services.project_report import project_report_service
+        from app.services.video_analyzer import video_analyzer
         start_time = time.time()
         summary_without_video = cache.get(xer_key)
         

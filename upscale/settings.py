@@ -21,12 +21,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-o9w5f^b70akb1zc5c0k&h!5+ml2r@myd_&lky1g(613_5f@z_)"
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-o9w5f^b70akb1zc5c0k&h!5+ml2r@myd_&lky1g(613_5f@z_)",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.environ.get("DEBUG", "True").lower() in {"1", "true", "yes"}
 
-ALLOWED_HOSTS = []
+RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+ALLOWED_HOSTS = ["*"] if DEBUG else [
+    host for host in [
+        "0.0.0.0",
+        "127.0.0.1",
+        "localhost",
+        RAILWAY_DOMAIN,
+        "upscalespaces.co.uk",
+    ] if host
+]
 
 
 # Application definition
@@ -38,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'app.apps.AppConfig',
     'rest_framework',
     'rest_framework.authtoken',
@@ -61,13 +74,15 @@ REST_FRAMEWORK = {
         }
 
 
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+        },
     }
 }
 RQ_QUEUES = {
@@ -88,8 +103,8 @@ RQ_QUEUES = {
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = "redis://127.0.0.1:6379/1"  # or 'amqp://localhost' for RabbitMQ
-CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/1"  # Optional: for storing results
+CELERY_BROKER_URL = REDIS_URL  # or 'amqp://localhost' for RabbitMQ
+CELERY_RESULT_BACKEND = REDIS_URL  # Optional: for storing results
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -100,6 +115,7 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
  
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -180,3 +196,8 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3002",
+    "https://upscalespaces.co.uk",
+]
