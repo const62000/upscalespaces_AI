@@ -22,6 +22,6 @@ def status(request):
         if stored:
             return Response(stored , status = s.HTTP_200_OK)
         else:
-            return Response("error: Failed to generate analysis at this time or result unavailable" , status = s.HTTP_410_GONE)
+            return Response({"error": "Failed to generate analysis at this time or result unavailable"} , status = s.HTTP_410_GONE)
     else:
-        return Response({'status': result.status,'task_id': task_id}, status = s.HTTP_102_PROCESSING)
+        return Response({'status': result.status,'task_id': task_id}, status = s.HTTP_201_CREATED)

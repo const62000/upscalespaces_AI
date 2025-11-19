@@ -45,10 +45,10 @@ REQUIREMENTS:
 - /status
   - CHECKS THE STATUS OF AN ONGOING OR COMPLETED TASK
   - **input_params** : *"task_id"* , *"data_key"*
-  - **output_code** : *102*: file still processing
+  - **output_code** : *201*: file still processing
   *200*: Return anaysis response if file was processed successfully in the last 5 hours
-  *410* : analysis response no longer in memory after processing
-  *400*: Bad request due to error in input 
+  *410* : analysis response no longer in memory after processing or couldnt save to memory because AI couldnt generate response
+  *400*: Bad request due to error in input params
 
 
 
