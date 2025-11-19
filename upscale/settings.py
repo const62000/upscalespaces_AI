@@ -201,6 +201,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3002",
     "https://upscalespaces.co.uk",
     "http://127.0.0.1:3002",
+    "https://www.upscalespaces.co.uk",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3002",
