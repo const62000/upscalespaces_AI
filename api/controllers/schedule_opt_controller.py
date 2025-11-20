@@ -23,7 +23,7 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 
 @shared_task(queue = "sch_queue" , rate_limit='10/m') 
-def sch_opt_task(file_path: str , cache_key):
+def sch_opt_task(file_path: str , cache_key, check_if_processing_key:str):
         from app.services.schedule_opt import schedule_opt_service
         start_time = time.time()
         xer_doc = xer_parser(file_path)  #List
@@ -41,10 +41,15 @@ def sch_opt_task(file_path: str , cache_key):
             if len(task_tokens) <= 15000:
                 msg =  f"WBS_ID:{wbs_id} \n\n tasks: {json.dumps(tasks)}"
                 state =  {"messages" : msg , "mode": "wbs"}
-                analysis[wbs_id] = schedule_opt_service(state).content
+                out =  schedule_opt_service(state)
+                analysis[wbs_id] = out.content
                 completed_wbs+=1
+                if hasattr(out , "error"):
+                    error_count+=1
                 logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [sch opt]")
-            
+                cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
             else:
                 half_task =  len(tasks) // 2
                 tasks =  [tasks[:half_task]  , tasks[half_task:]]
@@ -52,11 +57,16 @@ def sch_opt_task(file_path: str , cache_key):
                 for i , t in enumerate(tasks):
                     msg =  f"WBS_ID:{wbs_id}:[chunk {i+1}] \n\n tasks: {json.dumps(t)}"
                     state =  {"messages" : msg , "mode": "wbs"}
-                    t_combined+=  f"[chunk {i+1}]: \n\n" + schedule_opt_service(state).content+"\n\n"
+                    out =  schedule_opt_service(state)
+                    t_combined+=  f"[chunk {i+1}]: \n\n" + out.content+"\n\n"
                 analysis[wbs_id] =t_combined
                 completed_wbs+=1
+                if hasattr(out , "error"):
+                    error_count+=1
                 logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [sch opt]]")
-         
+                cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
         #->> after all wbs analysis ->> summarize project analysis
         if len(encoding.encode(json.dumps(analysis))) <= 230000:
             summary_state =  {"messages" : json.dumps(analysis) , "mode": "summary"}
@@ -78,6 +88,8 @@ def sch_opt_task(file_path: str , cache_key):
 
         if not hasattr(final_summary , "error"):
            cache.set(cache_key, final_summary.content, timeout=60*60*5)
+        else:
+            cache.set(check_if_processing_key , None , timeout=2)
         
         return final_summary.content
 
@@ -107,10 +119,14 @@ def schedule_opt_controller(request):
     if file and file.name.endswith(('.xer')):
         filehash =  file_hash(file)
         key = cache_key(filehash , "sch_opt")
+        check_if_processing_key = f"{key}:processing"
+
         cached_result = cache.get(key)
         if cached_result:
             logging.warning("Returning cached result")
             return Response(cached_result, status=status.HTTP_200_OK)
+        elif cache.get(check_if_processing_key):  ##check if the current file is processing
+            return Response(cache.get(check_if_processing_key), status=status.HTTP_202_ACCEPTED)
         else:
             logging.warning("No cached result found, processing file")
             tmp_dir = os.path.join(settings.BASE_DIR, 'tmp')
@@ -125,8 +141,8 @@ def schedule_opt_controller(request):
             
             #->> call task function (would be celery function)
     
-            t =  sch_opt_task.delay(file_path , key )
-            
+            t =  sch_opt_task.delay(file_path , key , check_if_processing_key)
+            cache.set(check_if_processing_key , {'task_id': t.id, 'data_key': key , 'status': 'processing'} , timeout=60*60*3)
             return Response({'task_id': t.id, 'data_key': key , 'status': 'processing'}, status=status.HTTP_202_ACCEPTED)
    
         

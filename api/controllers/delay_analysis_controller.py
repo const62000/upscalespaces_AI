@@ -18,13 +18,14 @@ import json
 import tiktoken
 import secrets
 import string
+from django.core.cache import cache
 
 
 encoding = tiktoken.get_encoding("cl100k_base")
 
 
 @shared_task(queue = "delay_queue" ,rate_limit='10/m')
-def delay_task(file_path: str , cache_key:str):
+def delay_task(file_path: str , cache_key:str , check_if_processing_key:str):
         from app.services.delay_analysis import delay_analysis_service
         start_time = time.time()
         xer_doc = xer_parser(file_path)  #List
@@ -36,15 +37,22 @@ def delay_task(file_path: str , cache_key:str):
             return "No tasks found in the provided xer file."
         analysis = {}
         completed_wbs = 0
+        error_count = 0
         for wbs_id , tasks in tasks_grouped.items():
             task_tokens =  encoding.encode(json.dumps(tasks))
             logging.warning(f"Processing WBS_ID: {wbs_id} with {len(tasks)} tasks, total tokens: {len(task_tokens)}")
             if len(task_tokens) <= 15000:
                 msg =  f"WBS_ID:{wbs_id} \n\n tasks: {json.dumps(tasks)}"
                 state =  {"messages" : msg , "mode": "wbs"}
-                analysis[wbs_id] = delay_analysis_service(state).content
+                out  =delay_analysis_service(state)
+                analysis[wbs_id] = out.content
                 completed_wbs+=1
+                if hasattr(out , "error"):
+                    error_count+=1
                 logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [delay analysis]")
+                cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
     
             else:
                 half_task =  len(tasks) // 2
@@ -53,11 +61,16 @@ def delay_task(file_path: str , cache_key:str):
                 for i , t in enumerate(tasks):
                     msg =  f"WBS_ID:{wbs_id}:[chunk {i+1}] \n\n tasks: {json.dumps(t)}"
                     state =  {"messages" : msg , "mode": "wbs"}
-                    t_combined+=  f"[chunk {i+1}]: \n\n" + delay_analysis_service(state).content+"\n\n"
+                    out =  delay_analysis_service(state)
+                    t_combined+=  f"[chunk {i+1}]: \n\n" + out.content+"\n\n"
                 analysis[wbs_id] =t_combined
                 completed_wbs+=1
+                if hasattr(out , "error"):
+                    error_count+=1
                 logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [delay analysis]")
-            
+                cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
         #->> after all wbs analysis ->> summarize project delay analysis
         if len(encoding.encode(json.dumps(analysis))) <= 230000:
             summary_state =  {"messages" : json.dumps(analysis) , "mode": "summary"}
@@ -78,6 +91,8 @@ def delay_task(file_path: str , cache_key:str):
         logging.warning(f"analysis completed [delay analysis] , analysis took {elapsed_time} mins")
         if not hasattr(final_summary , "error"):
            cache.set(cache_key, final_summary.content, timeout=60*60*5)  # cache for 5 hrs
+        else:
+            cache.set(check_if_processing_key , None , timeout=2)
         return final_summary.content
 
 def file_hash(file_obj):
@@ -103,10 +118,13 @@ def delay_analysis_controller(request):
     if file and file.name.endswith(('.xer')):  
         filehash =  file_hash(file)
         key = cache_key(filehash , "delay_analysis")
+        check_if_processing_key = f"{key}:processing"
         cached_result = cache.get(key)
         if cached_result:
             logging.warning("Returning cached result")
             return Response(cached_result, status=status.HTTP_200_OK)
+        elif cache.get(check_if_processing_key):
+            return Response(cache.get(check_if_processing_key), status=status.HTTP_202_ACCEPTED)
         else:
             logging.warning("No cached result found, processing file")
         
@@ -120,7 +138,8 @@ def delay_analysis_controller(request):
                     destination.write(chunk)
     
             #->> call task function (would be celery function)
-            t =  delay_task.delay(file_path , key)
+            t =  delay_task.delay(file_path , key, check_if_processing_key)
+            cache.set(check_if_processing_key , {'task_id': t.id, 'data_key': key , 'status': 'processing'} , timeout=60*60*3)
             return Response({'task_id': t.id, 'data_key': key , 'status': 'processing'}, status=status.HTTP_202_ACCEPTED)
     else:
         return Response({"error": "file not valid, only '.xer' file is allowed"}, status = status.HTTP_400_BAD_REQUEST)

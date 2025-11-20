@@ -28,7 +28,7 @@ encoding = tiktoken.get_encoding("cl100k_base")
 
 
 @shared_task(queue = "report_queue" , rate_limit='10/m')  ##controls num of request, that can be made.. if it surpasses 5 it lines it up in queue
-def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = None):
+def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, saved_img_paths: list = None ):
         from app.services.project_report import project_report_service
         from app.services.image_analyzer import img_analyzer
         start_time = time.time()
@@ -44,16 +44,22 @@ def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = N
                return "No tasks found in the provided xer file."
             analysis = {}
             completed_wbs = 0
+            error_count = 0
             for wbs_id , tasks in tasks_grouped.items():
                 task_tokens = encoding.encode(json.dumps(tasks))
                 logging.warning(f"Processing WBS_ID: {wbs_id} with {len(tasks)} tasks, total tokens: {len(task_tokens)}")
                 if len(task_tokens) <= 15000:
                     msg =  f"WBS_ID:{wbs_id} \n\n tasks: {json.dumps(tasks)}"
                     state =  {"messages" : msg , "mode": "wbs"}
-                    analysis[wbs_id] = project_report_service(state).content
+                    out =  project_report_service(state)
+                    analysis[wbs_id] = out.content
                     completed_wbs+=1
+                    if hasattr(out , "error"):
+                        error_count+=1
                     logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [project report]")
-    
+                    cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
                 else:
                     half_task =  len(tasks) // 2
                     tasks =  [tasks[:half_task]  , tasks[half_task:]]
@@ -61,11 +67,16 @@ def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = N
                     for i , t in enumerate(tasks):
                         msg =  f"WBS_ID:{wbs_id}:[chunk {i+1}] \n\n tasks: {json.dumps(t)}"
                         state =  {"messages" : msg , "mode": "wbs"}
-                        t_combined+=  f"[chunk {i+1}]: \n\n" + project_report_service(state).content+"\n\n"
+                        out =  project_report_service(state)
+                        t_combined+=  f"[chunk {i+1}]: \n\n" + out.content+"\n\n"
                     analysis[wbs_id] =t_combined
                     completed_wbs+=1
+                    if hasattr(out , "error"):
+                        error_count+=1
                     logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [project report]")
-                
+                    cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
             #->> after all wbs analysis ->> summarize project delay analysis
 
             if len(encoding.encode(json.dumps(analysis))) <  230000:
@@ -88,7 +99,10 @@ def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = N
             logging.warning("analysis completed  (no image) [project report]")
             if not hasattr(final_summary , "error"):
                cache.set(xer_key , final_summary.content , timeout=60*60*5)  #cache final summary w/o + image summary
-            final_summary = final_summary.content
+               final_summary = final_summary.content
+            else:
+                cache.set(check_if_processing_key , None , timeout=2)
+                return final_summary.content
         else:
             logging.warning("cached proj summary found **[w/o image]")
             final_summary =  summary_without_img
@@ -105,6 +119,9 @@ def report_task(file_path: str , xer_key , cache_key , saved_img_paths: list = N
                 [os.remove(f) for f in saved_img_paths]
                 if not hasattr(final_summary , "error"):
                    cache.set(cache_key, final_summary.content, timeout=60*60*5)
+                else:
+                   cache.set(check_if_processing_key , None , timeout=2)
+
                 final_summary = final_summary.content
             else:
                 logging.warning("cached proj summary found **[with image]")
@@ -150,24 +167,26 @@ def progress_report_controller(request):
         filehash =  file_hash(file , [i for i in images[:10]]) if images else file_hash(file)
         key = cache_key(filehash , "project_report")
 
+        check_if_processing_key = f"{key}:processing"
+
         xer_hash = file_hash(file)
         xer_key = cache_key(xer_hash, "project_report")
-
+       
         cached_result = cache.get(key)
         if cached_result:
             logging.warning("Returning cached result")
             return Response(cached_result, status=status.HTTP_200_OK)
+        elif cache.get(check_if_processing_key):
+            return Response(cache.get(check_if_processing_key), status=status.HTTP_202_ACCEPTED)
         else:
             logging.info("No cached file result found, processing file")
             tmp_dir = os.path.join(settings.BASE_DIR, 'tmp')
             os.makedirs(tmp_dir, exist_ok=True)
-            
             logging.warning(f"Processing file: {file.name}")
             file_path = os.path.join(tmp_dir, f"{gen_rand()}_{file.name}")
             with open(file_path, 'wb+') as destination:
                 for chunk in file.chunks():
                     destination.write(chunk)
-            
             if images:
                 if len(images)> 10:
                     images =  images[:10]
@@ -184,10 +203,11 @@ def progress_report_controller(request):
                         saved_img_paths.append(imgfile_path)
                     else:
                        return Response({"error": "image file not valid must be png jpg or jpeg"}, status = status.HTTP_400_BAD_REQUEST)
-                t  = report_task.delay(file_path ,xer_key ,key ,  saved_img_paths)
+                t  = report_task.delay(file_path ,xer_key ,key , check_if_processing_key, saved_img_paths )
             else:
-                t =  report_task.delay(file_path ,xer_key , key)
-    
+                t =  report_task.delay(file_path ,xer_key , key , check_if_processing_key)
+
+            cache.set(check_if_processing_key , {'task_id': t.id, 'data_key': key , 'status': 'processing'} , timeout=60*60*3)
             return Response({'task_id': t.id, 'data_key': key , 'status': 'processing'}, status=status.HTTP_202_ACCEPTED)
     
     else:

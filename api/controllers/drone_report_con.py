@@ -19,6 +19,7 @@ import json
 import time
 import secrets
 import string
+from django.core.cache import cache
 
 
 
@@ -26,7 +27,7 @@ import string
 encoding = tiktoken.get_encoding("cl100k_base")
 
 @shared_task(queue = "drone_queue" , rate_limit='10/m')  ##controls num of request, that can be made.. if it surpasses 5 it lines it up in queue
-def drone_task(file_path: str , xer_key , cache_key , video_path: str):
+def drone_task(file_path: str , xer_key , cache_key , video_path: str, check_if_processing_key:str ):
         from app.services.project_report import project_report_service
         from app.services.video_analyzer import video_analyzer
         start_time = time.time()
@@ -44,16 +45,22 @@ def drone_task(file_path: str , xer_key , cache_key , video_path: str):
 
             analysis = {}
             completed_wbs = 0
+            error_count = 0
             for wbs_id , tasks in tasks_grouped.items():
                 task_tokens = encoding.encode(json.dumps(tasks))
                 logging.warning(f"Processing WBS_ID: {wbs_id} with {len(tasks)} tasks, total tokens: {len(task_tokens)}")
                 if len(task_tokens) <= 15000:
                     msg =  f"WBS_ID:{wbs_id} \n\n tasks: {json.dumps(tasks)}"
                     state =  {"messages" : msg , "mode": "wbs"}
-                    analysis[wbs_id] = project_report_service(state).content
+                    out =  project_report_service(state)
+                    analysis[wbs_id] = out.content
                     completed_wbs+=1
+                    if hasattr(out , "error"):
+                        error_count+=1
                     logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [drone report]")
-    
+                    cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
                 else:
                     half_task =  len(tasks) // 2
                     tasks =  [tasks[:half_task]  , tasks[half_task:]]
@@ -61,11 +68,16 @@ def drone_task(file_path: str , xer_key , cache_key , video_path: str):
                     for i , t in enumerate(tasks):
                         msg =  f"WBS_ID:{wbs_id}:[chunk {i+1}] \n\n tasks: {json.dumps(t)}"
                         state =  {"messages" : msg , "mode": "wbs"}
-                        t_combined+=  f"[chunk {i+1}]: \n\n" + project_report_service(state).content+"\n\n"
+                        out =  project_report_service(state)
+                        t_combined+=  f"[chunk {i+1}]: \n\n" + out.content+"\n\n"
                     analysis[wbs_id] =t_combined
                     completed_wbs+=1
+                    if hasattr(out , "error"):
+                        error_count+=1
                     logging.warning(f"{completed_wbs} WBSs processed / {len(tasks_grouped.keys())} [drone report]")
-                
+                    cache.set(f"{cache_key}_progress" , {'processed_wbs': completed_wbs , 
+                                                     'total_wbs': len(tasks_grouped.keys()) , 
+                                                     'num_error': error_count} , timeout=60*60*2)
             #->> after all wbs analysis ->> summarize project delay analysis
 
             if len(encoding.encode(json.dumps(analysis))) <  230000:
@@ -88,7 +100,10 @@ def drone_task(file_path: str , xer_key , cache_key , video_path: str):
             logging.warning("analysis completed  (w/o video) [drone report]")
             if not hasattr(final_summary , "error"):
                cache.set(xer_key , final_summary.content , timeout=60*60*5)  #cache final summary w/o + video summary
-            final_summary = final_summary.content
+               final_summary = final_summary.content
+            else:
+                cache.set(check_if_processing_key , None , timeout=2)
+                return final_summary.content
         else:
             logging.warning("cached proj summary found **[w/o drone footage]")
             final_summary =  summary_without_video
@@ -106,6 +121,8 @@ def drone_task(file_path: str , xer_key , cache_key , video_path: str):
                     os.remove(video_path)
                 if not hasattr(final_summary , "error"):
                     cache.set(cache_key, final_summary.content, timeout=60*60*5)
+                else:
+                   cache.set(check_if_processing_key , None , timeout=2)
                 final_summary = final_summary.content
             else:
                 logging.warning("cached proj summary found **[with video]")
@@ -153,6 +170,7 @@ def drone_report_controller(request):
     if file.name.endswith(('.xer')) and video.name.endswith(('.mp4','.mkv' ,'.avi')):
         filehash =  file_hash(file , [video])
         key = cache_key(filehash , "drone_report")
+        check_if_processing_key = f"{key}:processing"
 
         xer_hash = file_hash(file)
         xer_key = cache_key(xer_hash, "project_report")
@@ -161,6 +179,9 @@ def drone_report_controller(request):
         if cached_result:
             logging.warning("Returning cached result")
             return Response(cached_result, status=status.HTTP_200_OK)
+        elif cache.get(check_if_processing_key):  ##check if the current file is processing
+            return Response(cache.get(check_if_processing_key), status=status.HTTP_202_ACCEPTED)
+    
         else:
             logging.info("No cached file result found, processing file")
             tmp_dir = os.path.join(settings.BASE_DIR, 'tmp')
@@ -178,8 +199,8 @@ def drone_report_controller(request):
             with open(vidfile_path, 'wb+') as destination:
                 for chunk in video.chunks():
                     destination.write(chunk)
-            t  = drone_task.delay(file_path ,xer_key ,key , vidfile_path)
-    
+            t  = drone_task.delay(file_path ,xer_key ,key , vidfile_path , check_if_processing_key)
+            cache.set(check_if_processing_key , {'task_id': t.id, 'data_key': key , 'status': 'processing'} , timeout=60*60*3)
             return Response({'task_id': t.id, 'data_key': key , 'status': 'processing'}, status=status.HTTP_202_ACCEPTED)
     
     else:
