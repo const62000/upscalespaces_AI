@@ -12,6 +12,7 @@ from PIL import Image
 from langchain_core.messages import AIMessage, HumanMessage , SystemMessage , ToolMessage
 import django_rq
 import time
+import os
 import cv2
 from langchain_google_genai import ChatGoogleGenerativeAI
 from django.conf import settings
@@ -21,10 +22,11 @@ try:
 except ImportError:
     _DECORD_AVAILABLE = False
 
-load_dotenv()
-
-llm = ChatOpenAI(model="gpt-5-mini",temperature=1,max_tokens=800,timeout=None,max_retries=2) 
-llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500)
+#load_dotenv()
+GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "sk..")
+GEMINI_KEY = os.environ.get("GOOGLE_API_KEY" , "AI..")
+llm = ChatOpenAI(model="gpt-5-mini",temperature=1,max_tokens=800,timeout=None,max_retries=2 , api_key = GPT_KEY) 
+llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500, api_key = GEMINI_KEY)
 
 @tool
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
@@ -89,7 +91,6 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
             )
         fps = 1.0
         fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
-
         with open(video_path , "rb") as f:
             vr = VideoReader(f, cpu(0) ,  num_threads = 3)
             vr = vr.get_batch(range(0, len(vr), 60)).asnumpy()   #samples at 1 frame per second, assuming its as 60fps video
