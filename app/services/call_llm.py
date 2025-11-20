@@ -52,7 +52,7 @@ def data_analyst(arguments: str):
     
     
 
-@retry(wait=wait_random_exponential(min=60, max=180), stop=stop_after_attempt(4))
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
 def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , video_path = None):
     if mode == "img":
         logging.warning("calling image analyzer llm")
