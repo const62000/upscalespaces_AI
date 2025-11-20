@@ -23,6 +23,6 @@ def status(request):
         if stored:
             return Response(stored , status = s.HTTP_200_OK)
         else:
-            return Response({"error": "Failed to generate analysis at this time or result unavailable"} , status = s.HTTP_410_GONE)
+            return Response({"error": "Failed to generate analysis at this time or result unavailable"} , status = s.HTTP_204_NO_CONTENT)
     else:
         return Response({'status': result.status,'task_id': task_id , 'progress': cache.get(f"{data_key}_progress" , {'processed_wbs': 0})}, status = s.HTTP_201_CREATED)
