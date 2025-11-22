@@ -23,9 +23,9 @@ except ImportError:
     _DECORD_AVAILABLE = False
 
 #load_dotenv()
-GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "sk..")
-GEMINI_KEY = os.environ.get("GOOGLE_API_KEY" , "AI..")
-llm = ChatOpenAI(model="gpt-5-mini",temperature=1,max_tokens=800,timeout=None,max_retries=2 , api_key = GPT_KEY) 
+GPT_KEY =  settings.GPT_KEY
+GEMINI_KEY = settings.GEMINI_KEY
+llm = ChatOpenAI(model="gpt-4o",temperature=1,max_tokens=800,timeout=None,max_retries=2 , api_key = GPT_KEY) 
 llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500, api_key = GEMINI_KEY)
 
 @tool
