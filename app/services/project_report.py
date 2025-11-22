@@ -22,6 +22,7 @@ def gen_rand():
 class state_schema(MessagesState):
     mode : str    
     remaining_steps: RemainingSteps
+    task_type: str | None
 
 
 def tool_node(state: state_schema):  
@@ -68,6 +69,7 @@ def agent_node(state: state_schema):
     logging.warning("agent node called  [project_report.py]")
     msg = state.get("messages") #all tasks linked to wbs_id
     mode = state.get("mode")  #wbs or summary
+    task_type = state.get("task_type")
     
     system =  prompt().wbs() if mode == "wbs" else prompt().summary_1()
     
@@ -76,7 +78,7 @@ def agent_node(state: state_schema):
               task_rsrc_ref , task_pred_ref ,  task_ref]
     
     
-    ai_msg = call_llm(mode= "default" , human_msg= f"{msg}" , system_msg= system)
+    ai_msg = call_llm(mode= "default" , human_msg= f"{msg}" , system_msg= system , task_type =task_type)
 
     state["messages"].append(AIMessage(**(ai_msg)))
     return state

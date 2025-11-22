@@ -29,7 +29,7 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in {"1", "true", "yes"}
 
-GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "sk..")
+GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "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")
 GEMINI_KEY = os.environ.get("GOOGLE_API_KEY" , "AI..")
 
 RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")

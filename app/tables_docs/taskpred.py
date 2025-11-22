@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 
 @tool
-def task_pred_ref(arguments:str =  None):
+def task_pred_ref(arguments:str):
     """useful when you need meaning of column names in the Taskpred table"""
     return f'''
     ---------------------------------------------------------------

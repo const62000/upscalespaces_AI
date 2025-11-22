@@ -15,6 +15,7 @@ class state_schema(MessagesState):
     image_paths : list[str] 
     system_msg : str
     remaining_steps: RemainingSteps
+    task_type: str | None
 
 def tool_node(state: state_schema):  
     logging.warning("tool node called  [image analyzer.py]")
@@ -62,9 +63,10 @@ def agent_node(state: state_schema):
     msg = state.get("messages") #all tasks linked to wbs_id
     system =  state.get("system_msg")
     img_paths =  state.get('image_paths')
+    task_type =  state.get("task_type")
     
     
-    ai_msg = call_llm(mode= "img" , human_msg= f"{msg}" , system_msg= system , image_paths= img_paths)
+    ai_msg = call_llm(mode= "img" , human_msg= f"{msg}" , system_msg= system , image_paths= img_paths , task_type = task_type)
 
     state["messages"].append(AIMessage(**(ai_msg)))
     return state

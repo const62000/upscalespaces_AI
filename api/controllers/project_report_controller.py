@@ -81,7 +81,7 @@ def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, s
 
             if len(encoding.encode(json.dumps(analysis))) <  230000:
                 logging.warning("generating project summary")
-                summary_state =  {"messages" : json.dumps(analysis) , "mode": "summary_1"}
+                summary_state =  {"messages" : json.dumps(analysis) , "mode": "summary_1" , "task_type": "proj_sum"}
 
             else:
                 logging.warning("generating project summary in 2 chunks due to token size")
@@ -90,9 +90,9 @@ def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, s
                 wbs_combined  =  ""
                 for i , w in enumerate(wbs):
                     msg =  f"WBS Analysis:[chunk {i+1}] \n\n wbs_analysis: {json.dumps(dict(w))}"
-                    state =  {"messages" : msg , "mode": "summary_1"}
+                    state =  {"messages" : msg , "mode": "summary_1" , "task_type": "proj_sum"}
                     wbs_combined+=  f"[chunk {i+1}]: \n\n" + project_report_service(state).content+"\n\n"
-                summary_state =  {"messages" : wbs_combined , "mode": "summary_1"}
+                summary_state =  {"messages" : wbs_combined , "mode": "summary_1", "task_type": "proj_sum"}
             
 
             final_summary =  project_report_service(summary_state) #pass summary_state to llm and get overall project delay analysis 
@@ -114,7 +114,8 @@ def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, s
             if not summary_with_img:
                 final_summary =  img_analyzer({"messages" : final_summary, 
                                                 "system_msg": prompt().summary_2() , 
-                                                "image_paths" : saved_img_paths})
+                                                "image_paths" : saved_img_paths,
+                                                "task_type": "proj_sum"})
                 logging.warning("analysis completed  (with image) [project report]")
                 [os.remove(f) for f in saved_img_paths]
                 if not hasattr(final_summary , "error"):

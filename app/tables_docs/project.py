@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 
 @tool
-def project_ref(arguments:str = None):
+def project_ref(arguments:str):
 
     """useful when you need meaning of column names in the project table"""
     return f'''

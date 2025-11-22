@@ -15,6 +15,7 @@ import time
 import os
 import cv2
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel
 from django.conf import settings
 try:
     from decord import VideoReader, cpu  # optional dependency for video processing
@@ -27,6 +28,14 @@ GPT_KEY =  settings.GPT_KEY
 GEMINI_KEY = settings.GEMINI_KEY
 llm = ChatOpenAI(model="gpt-4o",temperature=1,max_tokens=800,timeout=None,max_retries=2 , api_key = GPT_KEY) 
 llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500, api_key = GEMINI_KEY)
+
+
+class OutputSchema(BaseModel):
+    analysis: str
+    percentage_progress: int
+    total_wbs: int
+    active_wbs: int
+    overdue_wbs: int
 
 @tool
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
@@ -55,13 +64,17 @@ def data_analyst(arguments: str):
     
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , video_path = None):
+def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , video_path = None , task_type = None):
     if mode == "img":
         logging.warning("calling image analyzer llm")
         tools =  [calculator ,  data_analyst,calendar_ref,
                 project_ref,  projwbs_ref ,  rsrc_ref,
                 task_rsrc_ref , task_pred_ref ,  task_ref]
-        model = llm_2.bind_tools(tools)
+        
+        if task_type == "proj_sum":
+           model = llm_2.bind_tools(tools ,response_format=OutputSchema , strict = True)
+        else:
+           model = llm_2.bind_tools(tools)
         
         human_content =  []
         for img in image_paths:
@@ -105,7 +118,10 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         tools =  [calculator ,  data_analyst,calendar_ref,
                 project_ref,  projwbs_ref ,  rsrc_ref,
                 task_rsrc_ref , task_pred_ref ,  task_ref]
-        model = llm_2.bind_tools(tools)
+        if task_type == "proj_sum":
+           model = llm_2.bind_tools(tools ,response_format=OutputSchema,strict=True)
+        else:
+           model = llm_2.bind_tools(tools)
         
         human_content =  []
         
@@ -132,7 +148,10 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
                 project_ref,  projwbs_ref ,  rsrc_ref,
                 task_rsrc_ref , task_pred_ref ,  task_ref]
         
-        model = llm.bind_tools(tools)
+        if task_type == "proj_sum":
+            model = llm.bind_tools(tools ,response_format=OutputSchema,strict=True)
+        else:
+            model = llm.bind_tools(tools)
         messages = [("system",system_msg),
                     ("human", human_msg)]
         try:
@@ -143,27 +162,27 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
     
     
 
-def _call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= None , video_path:str = None)->AIMessage:
+def _call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= None , video_path:str = None , task_type =None)->AIMessage:
     try:
         return llm_call(mode= mode , human_msg= human_msg,  system_msg=system_msg  , 
-                        image_paths=image_paths , video_path=video_path)
+                        image_paths=image_paths , video_path=video_path , task_type = task_type)
     except Exception as e:
         logging.warning("error: Failed to generate analysis at this time.")
         return AIMessage(content="error: Failed to generate analysis at this time." , error = True).model_dump()
 
 
-def call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= None , video_path:str = None):
+def call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= None , video_path:str = None, task_type =None):
     if settings.TEST_MODE:
-            return _call_llm(mode , human_msg , system_msg , image_paths , video_path)
+            return _call_llm(mode , human_msg , system_msg , image_paths , video_path , task_type = task_type)
     
     else:
         media_modes =["vid", "img"]
         if mode in media_modes:
             gemini_queue = django_rq.get_queue('gemini')
-            job = gemini_queue.enqueue(_call_llm, mode , human_msg , system_msg , image_paths, video_path )
+            job = gemini_queue.enqueue(_call_llm, mode , human_msg , system_msg , image_paths, video_path , task_type = task_type)
         else:
             gpt_queue = django_rq.get_queue('gpt')
-            job = gpt_queue.enqueue(_call_llm, mode , human_msg , system_msg)
+            job = gpt_queue.enqueue(_call_llm, mode , human_msg , system_msg, task_type = task_type)
 
         timeout = 60 * 30 # 30 mins (in secs) timeout
         start = time.time()

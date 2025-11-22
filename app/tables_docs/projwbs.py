@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 
 @tool
-def projwbs_ref(arguments:str = None):
+def projwbs_ref(arguments:str):
 
     """useful when you need meaning of column names in the WBS table"""
     return f'''
