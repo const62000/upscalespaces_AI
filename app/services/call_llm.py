@@ -30,7 +30,7 @@ llm = ChatOpenAI(model="gpt-4o",temperature=1,max_tokens=800,timeout=None,max_re
 llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500, api_key = GEMINI_KEY)
 
 
-class OutputSchema(BaseModel):
+class OutputSchema(BaseModel): #
     analysis: str
     percentage_progress: int
     total_wbs: int

@@ -69,7 +69,7 @@ def agent_node(state: state_schema):
     logging.warning("agent node called  [project_report.py]")
     msg = state.get("messages") #all tasks linked to wbs_id
     mode = state.get("mode")  #wbs or summary
-    task_type = state.get("task_type")
+    task_type = state.get("task_type") #
     
     system =  prompt().wbs() if mode == "wbs" else prompt().summary_1()
     

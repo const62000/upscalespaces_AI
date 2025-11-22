@@ -64,7 +64,7 @@ def agent_node(state: state_schema):
     msg = state.get("messages") #all tasks linked to wbs_id
     system =  state.get("system_msg")
     vid_path =  state.get('video_path')
-    task_type =  state.get("task_type")
+    task_type =  state.get("task_type") #
     
     ai_msg = call_llm(mode= "vid" , human_msg= f"{msg}" , system_msg= system , video_path= vid_path , task_type = task_type)
 
