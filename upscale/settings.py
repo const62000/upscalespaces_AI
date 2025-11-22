@@ -29,6 +29,9 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in {"1", "true", "yes"}
 
+GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "sk..")
+GEMINI_KEY = os.environ.get("GOOGLE_API_KEY" , "AI..")
+
 RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 ALLOWED_HOSTS = ["*"] if DEBUG else [
     host for host in [
