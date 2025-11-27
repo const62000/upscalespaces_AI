@@ -60,21 +60,26 @@ def data_analyst(arguments: str):
    
     tool_msg = llm.invoke(messages)
     return tool_msg.content
+
+
     
-    
+tools =  [calculator ,  data_analyst,calendar_ref,
+            project_ref,  projwbs_ref ,  rsrc_ref,
+            task_rsrc_ref , task_pred_ref ,  task_ref]
+
+llm_2 = llm_2.bind_tools(tools)
+llm_w_tools = llm.bind_tools(tools)
+
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
 def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , video_path = None , task_type = None):
     if mode == "img":
         logging.warning("calling image analyzer llm")
-        tools =  [calculator ,  data_analyst,calendar_ref,
-                project_ref,  projwbs_ref ,  rsrc_ref,
-                task_rsrc_ref , task_pred_ref ,  task_ref]
-        
         if task_type == "proj_sum":
-           model = llm_2.bind_tools(tools ,response_format=OutputSchema , strict = True)
+           model = llm_2.with_structured_output(
+               schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
         else:
-           model = llm_2.bind_tools(tools)
+           model = llm_2
         
         human_content =  []
         for img in image_paths:
@@ -93,7 +98,10 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         messages = [system_msg, human_msg]
         try:
             ai_msg = model.invoke(messages)
-            return ai_msg.model_dump()  #as dict
+            if isinstance(ai_msg , AIMessage):
+                if isinstance(ai_msg.content, list):
+                   ai_msg.content =  ai_msg[0].get("text" , "")
+            return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
         except Exception as e:
             raise e
     elif mode == "vid":
@@ -115,13 +123,12 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
             out.write(bgr_frame)
         out.release()
 
-        tools =  [calculator ,  data_analyst,calendar_ref,
-                project_ref,  projwbs_ref ,  rsrc_ref,
-                task_rsrc_ref , task_pred_ref ,  task_ref]
         if task_type == "proj_sum":
-           model = llm_2.bind_tools(tools ,response_format=OutputSchema,strict=True)
+           model = llm_2.with_structured_output(
+               schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+
         else:
-           model = llm_2.bind_tools(tools)
+           model = llm_2
         
         human_content =  []
         
@@ -137,26 +144,31 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         messages = [system_msg, human_msg]
         try:
             ai_msg = model.invoke(messages)
-            return ai_msg.model_dump()  #as dict
+            if isinstance(ai_msg , AIMessage):
+                if isinstance(ai_msg.content, list):
+                   ai_msg.content =  ai_msg[0].get("text" , "")
+            return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
         except Exception as e:
             raise e
+    
 
 
     else:
         logging.warning("calling llm")
         tools =  [calculator ,  data_analyst,calendar_ref,
-                project_ref,  projwbs_ref ,  rsrc_ref,
-                task_rsrc_ref , task_pred_ref ,  task_ref]
-        
+            project_ref,  projwbs_ref ,  rsrc_ref,
+            task_rsrc_ref , task_pred_ref ,  task_ref]
+
         if task_type == "proj_sum":
             model = llm.bind_tools(tools ,response_format=OutputSchema,strict=True)
         else:
-            model = llm.bind_tools(tools)
+            model = llm_w_tools
         messages = [("system",system_msg),
                     ("human", human_msg)]
         try:
             ai_msg = model.invoke(messages)
-            return ai_msg.model_dump()  #as dict
+            return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
+        
         except Exception as e:
             raise e
     
