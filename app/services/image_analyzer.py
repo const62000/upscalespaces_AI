@@ -5,7 +5,9 @@ from ..tables_docs import *
 from dotenv import load_dotenv
 import logging
 from .call_llm import call_llm , calculator , data_analyst
+from api.controllers.project_report_controller import project_report_status
 from langgraph.managed.is_last_step import RemainingSteps
+from django.core.cache import cache
 
 load_dotenv()
   
@@ -16,6 +18,7 @@ class state_schema(MessagesState):
     system_msg : str
     remaining_steps: RemainingSteps
     task_type: str | None
+    status: project_report_status
 
 def tool_node(state: state_schema):  
     logging.warning("tool node called  [image analyzer.py]")
@@ -72,25 +75,46 @@ def agent_node(state: state_schema):
     return state
 
 
-def route(state):
+def route(state: state_schema):
     if state["messages"][-1].tool_calls and state["remaining_steps"] >2:
         return "tools"
     else:
-        return END
-    
+        return "write_status"
+
+
+def write_status_node(state: state_schema):
+    logging.warning("write status node called  [image_analyzer.py]")
+    status = state.get("status")
+    message = state.get("messages")[-1]
+    if hasattr(message, "error"):
+        status.num_summary_errors +=1
+    status.latest_analysis = message.content
+    cache.set(status.key , status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+    logging.warning(f"updated status in cache [image_analyzer.py]")
+    return state
+
 workflow = StateGraph(state_schema)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tool_node)
+workflow.add_node("write_status", write_status_node)
+
 workflow.add_edge(START, "agent")  
 workflow.add_conditional_edges( "agent", route,
-                            {"tools": "tools", END: END})
+                            {"tools": "tools", "write_status": "write_status"} )
 workflow.add_edge("tools", "agent")
 app = workflow.compile()
 
+app = workflow.compile()
 
-def img_analyzer(state: dict)-> AIMessage:
-    res =  app.invoke(state , {"recursion_limit": 50})
-    return res["messages"][-1]
+
+def _img_analyzer(state: list):
+   res =  app.batch(state , {"recursion_limit": 50 , "max_concurrency": len(state)} , return_exceptions = True )
+   return res
+
+def img_analyzer(states:list):
+    logging.warning("image analyzer service called")
+    results =  _img_analyzer(states)
+    return results
     
 
     

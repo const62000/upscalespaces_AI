@@ -23,19 +23,20 @@ try:
 except ImportError:
     _DECORD_AVAILABLE = False
 
-#load_dotenv()
 GPT_KEY =  settings.GPT_KEY
 GEMINI_KEY = settings.GEMINI_KEY
-llm = ChatOpenAI(model="gpt-4o",temperature=1,max_tokens=800,timeout=None,max_retries=2 , api_key = GPT_KEY) 
-llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =1500, api_key = GEMINI_KEY)
+#llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =800, api_key = GEMINI_KEY)
+
+llm= ChatOpenAI(model="gpt-4o",temperature=1,max_tokens=800,timeout=None, api_key = GPT_KEY) 
+llm_2 = ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_output_tokens =800, api_key = GEMINI_KEY)
 
 
 class OutputSchema(BaseModel): #
     analysis: str
     percentage_progress: int
-    total_wbs: int
-    active_wbs: int
-    overdue_wbs: int
+    total_tasks: int
+    active_tasks: int
+    overdue_tasks: int
 
 @tool
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
@@ -67,19 +68,26 @@ tools =  [calculator ,  data_analyst,calendar_ref,
             project_ref,  projwbs_ref ,  rsrc_ref,
             task_rsrc_ref , task_pred_ref ,  task_ref]
 
-llm_2 = llm_2.bind_tools(tools)
-llm_w_tools = llm.bind_tools(tools)
+#llm_2_w_tools = llm_2.bind_tools(tools)
+#llm_w_tools = llm.bind_tools(tools)
 
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
 def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , video_path = None , task_type = None):
+    tools =  [calculator ,  data_analyst,calendar_ref,
+            project_ref,  projwbs_ref ,  rsrc_ref,
+            task_rsrc_ref , task_pred_ref ,  task_ref]
     if mode == "img":
         logging.warning("calling image analyzer llm")
         if task_type == "proj_sum":
-           model = llm_2.with_structured_output(
-               schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+            if isinstance(llm_2 , ChatGoogleGenerativeAI):
+                model = llm_2.with_structured_output(
+                    schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+            else:
+                model =llm_2.bind_tools(tools , response_format=OutputSchema,strict=True)
+
         else:
-           model = llm_2
+           model = llm_2.bind_tools(tools)
         
         human_content =  []
         for img in image_paths:
@@ -100,7 +108,7 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
             ai_msg = model.invoke(messages)
             if isinstance(ai_msg , AIMessage):
                 if isinstance(ai_msg.content, list):
-                   ai_msg.content =  ai_msg[0].get("text" , "")
+                   ai_msg.content =  ai_msg.content[0].get("text" , "")
             return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
         except Exception as e:
             raise e
@@ -115,7 +123,6 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         with open(video_path , "rb") as f:
             vr = VideoReader(f, cpu(0) ,  num_threads = 3)
             vr = vr.get_batch(range(0, len(vr), 60)).asnumpy()   #samples at 1 frame per second, assuming its as 60fps video
-
         frame_size = (vr.shape[2], vr.shape[1])
         out = cv2.VideoWriter(video_path, fourcc, fps, frame_size, isColor=True)
         for frame in vr:
@@ -124,17 +131,20 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         out.release()
 
         if task_type == "proj_sum":
-           model = llm_2.with_structured_output(
-               schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+           if isinstance(llm_2 , ChatGoogleGenerativeAI):
+                model = llm_2.with_structured_output(
+                schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+           else:
+                model =  llm_2.bind_tools(tools , response_format=OutputSchema,strict=True)
 
         else:
-           model = llm_2
+           model = llm_2.bind_tools(tools)
         
         human_content =  []
         
         with open(video_path , "rb") as vid:
             vid_data =  base64.b64encode(vid.read()).decode("utf-8")
-            human_content.append({"type": "video" , "video": {"data": vid_data ,  "mime_type": "video/mp4"}})
+            human_content.append({"type": "media" , "data": vid_data ,  "mime_type": "video/mp4"})
 
         human_content.append({"type": "text" , "text": human_msg})      
         
@@ -146,11 +156,10 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
             ai_msg = model.invoke(messages)
             if isinstance(ai_msg , AIMessage):
                 if isinstance(ai_msg.content, list):
-                   ai_msg.content =  ai_msg[0].get("text" , "")
+                   ai_msg.content =  ai_msg.content[0].get("text" , "")
             return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
         except Exception as e:
             raise e
-    
 
 
     else:
@@ -158,15 +167,23 @@ def llm_call(mode:str , human_msg: str,  system_msg: str  , image_paths= None , 
         tools =  [calculator ,  data_analyst,calendar_ref,
             project_ref,  projwbs_ref ,  rsrc_ref,
             task_rsrc_ref , task_pred_ref ,  task_ref]
-
+        
         if task_type == "proj_sum":
-            model = llm.bind_tools(tools ,response_format=OutputSchema,strict=True)
+            if isinstance(llm , ChatGoogleGenerativeAI):
+                model = llm.with_structured_output(
+                schema=OutputSchema.model_json_schema(), method="json_schema", strict=True)
+            else:
+                model = llm.bind_tools(tools , response_format=OutputSchema,strict=True)
+
         else:
-            model = llm_w_tools
+            model = llm.bind_tools(tools)
         messages = [("system",system_msg),
                     ("human", human_msg)]
         try:
             ai_msg = model.invoke(messages)
+            if isinstance(ai_msg , AIMessage):
+                if isinstance(ai_msg.content, list):
+                    ai_msg.content =  ai_msg.content[0].get("text" , "")
             return ai_msg.model_dump() if isinstance(ai_msg , AIMessage) else AIMessage(content = str(ai_msg)).model_dump() #as dict
         
         except Exception as e:
@@ -179,6 +196,7 @@ def _call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= N
         return llm_call(mode= mode , human_msg= human_msg,  system_msg=system_msg  , 
                         image_paths=image_paths , video_path=video_path , task_type = task_type)
     except Exception as e:
+        logging.warning(f"LLM call failed with error: {e}")
         logging.warning("error: Failed to generate analysis at this time.")
         return AIMessage(content="error: Failed to generate analysis at this time." , error = True).model_dump()
 
@@ -198,7 +216,6 @@ def call_llm(mode:str , human_msg: str,  system_msg: str  , image_paths:list= No
 
         timeout = 60 * 30 # 30 mins (in secs) timeout
         start = time.time()
-
         while not job.is_finished and not job.is_failed:
             if (time.time() - start) > timeout:
                 logging.warning("error:  Failed to generate analysis at this time. [due to queue timeout error]")

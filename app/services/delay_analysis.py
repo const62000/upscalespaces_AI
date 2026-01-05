@@ -3,18 +3,19 @@ from langgraph.graph import StateGraph ,MessagesState, END , START
 from langchain_core.messages import AIMessage, ToolMessage, AnyMessage
 from ..tables_docs import *
 from typing_extensions import Annotated
-from dotenv import load_dotenv
 import logging
 from ..prompts.delay_analysis import prompt
 from .call_llm import call_llm ,data_analyst , calculator
 from langgraph.managed.is_last_step import RemainingSteps
 from langgraph.graph.message import add_messages
-load_dotenv()
-  
-
+import asyncio
+from api.controllers.delay_analysis_controller import delay_analysis_status
+from django.core.cache import cache
 
 class state_schema(MessagesState):
     mode : str    
+    task_id: int | None
+    status: delay_analysis_status
     remaining_steps: RemainingSteps
 
 def tool_node(state: state_schema):  
@@ -61,9 +62,10 @@ def tool_node(state: state_schema):
 def agent_node(state: state_schema):
     logging.warning("agent node called  [delay_analysis.py]")
     msg = state.get("messages") #all tasks linked to wbs_id
-    mode = state.get("mode")  #wbs or summary
+    mode = state.get("mode")  #task or summary
+    task_id = state.get("task_id")
     
-    system =  prompt().wbs() if mode == "wbs" else prompt().summary()
+    system =  prompt().task() if mode == "task" else prompt().summary()
     tools =  [calculator ,  data_analyst,calendar_ref,
               project_ref,  projwbs_ref ,  rsrc_ref,
               task_rsrc_ref , task_pred_ref ,  task_ref]
@@ -75,25 +77,57 @@ def agent_node(state: state_schema):
 
 
 
-def route(state):
+def route(state: state_schema):
     if state["messages"][-1].tool_calls and state["remaining_steps"] >2:
         return "tools"
     else:
-        return END
+        return "write_status"
+
+
+def write_status_node(state: state_schema):
+    logging.warning("write status node called  [delay_analysis.py]")
+    mode =  state.get("mode")
+    status = state.get("status")
+    message = state.get("messages")[-1]
+    if mode != "summary":
+        if hasattr(message, "error"):
+            status.num_task_errors +=1
+        status.processed_tasks +=1
+    else:
+        if hasattr(message, "error"):
+            status.num_summary_errors +=1
+    status.latest_analysis = message.content
+    cache.set(status.key , status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+    logging.warning(f"updated status in cache [delay_analysis.py]")
+    return state
 
 workflow = StateGraph(state_schema)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tool_node)
+workflow.add_node("write_status", write_status_node)
+
 workflow.add_edge(START, "agent")  
 workflow.add_conditional_edges( "agent", route,
-                            {"tools": "tools", END: END})
+                            {"tools": "tools", "write_status": "write_status"} )
 workflow.add_edge("tools", "agent")
 app = workflow.compile()
 
 
-def delay_analysis_service(state: dict)-> AIMessage:
-    res =  app.invoke(state ,{"recursion_limit": 50})
-    return res["messages"][-1]
+
+
+def _delay_analysis_service(states: list):
+    #tasks = [asyncio.create_task(app.ainvoke(state , {"recursion_limit": 50})) for state in states]
+    #res =  await asyncio.gather(*tasks)
+    res =  app.batch(states , return_exceptions=  True , config = {"recursion_limit":50 , "max_concurrency":len(states)})
+    return res
+
+def delay_analysis_service(states: list):
+    res = _delay_analysis_service(states)
+    return res
+    
+
+
+
     
 
     
