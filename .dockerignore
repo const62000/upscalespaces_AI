@@ -1,2 +1,3 @@
 play.ipynb
 db.sqlite3
+**/*.env
