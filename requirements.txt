@@ -4,6 +4,7 @@ djangorestframework
 celery[redis]
 django-redis
 xer-reader
+asyncio
 langchain
 langchain-openai
 langchain-google-genai
