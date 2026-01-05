@@ -19,10 +19,10 @@ def status(request):
     result = AsyncResult(task_id)
     if result.ready():
         stored = cache.get(data_key)
-        cache.set(f"{data_key}_progress" , None , timeout=2)
+        cache.set(f"{data_key}:processing" , None , timeout=2)
         if stored:
             return Response(stored , status = s.HTTP_200_OK)
         else:
             return Response({"error": "Failed to generate analysis at this time or result unavailable"} , status = s.HTTP_201_CREATED)
     else:
-        return Response({'status': result.status,'task_id': task_id , 'progress': cache.get(f"{data_key}_progress" , {'processed_wbs': 0})}, status = s.HTTP_202_ACCEPTED)
+        return Response({'status': result.status,'task_id': task_id , 'progress': cache.get(f"{data_key}:processing" , {'processed_tasks': 0})}, status = s.HTTP_202_ACCEPTED)
