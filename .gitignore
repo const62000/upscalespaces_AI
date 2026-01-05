@@ -6,4 +6,5 @@ play.ipynb
 **/*.py[cod]$
 **/*.pyo
 **/*.pyd
+**/*.env
 
