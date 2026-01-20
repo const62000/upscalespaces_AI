@@ -88,22 +88,20 @@ CACHES = {
         },
     }
 }
+
 RQ_QUEUES = {
     'gpt': {
-        'HOST': 'localhost',
-        'PORT': 6379,
-        'DB': 0,
-        'DEFAULT_TIMEOUT': 360,
+        'USE_REDIS_CACHE': 'default',
+        'DEFAULT_TIMEOUT': 60*60,
         'ASYNC': True
     },
     'gemini': {
-        'HOST': 'localhost',
-        'PORT': 6379,
-        'DB': 0,
-        'DEFAULT_TIMEOUT': 360,
+        'USE_REDIS_CACHE': 'default',
+        'DEFAULT_TIMEOUT': 60*60,
         'ASYNC': True
     }
 }
+
 
 # Celery Configuration
 CELERY_BROKER_URL = REDIS_URL  # or 'amqp://localhost' for RabbitMQ
