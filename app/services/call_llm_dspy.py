@@ -11,7 +11,6 @@ from PIL import Image
 import time
 import django_rq
 import json
-from langchain_mistralai import ChatMistralAI
 
 try:
     from decord import VideoReader, cpu  # optional dependency for video processing

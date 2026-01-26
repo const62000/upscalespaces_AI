@@ -122,7 +122,7 @@ def _risk_service(state: list):
 def risk_service(states:list):
     logging.warning("risk forecast service called")
     results =  _risk_service(states)
-    return results
+    return results 
     
 
     

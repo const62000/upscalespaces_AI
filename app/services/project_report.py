@@ -134,7 +134,7 @@ def _project_report_service(state: list):
 def project_report_service(states:list):
     logging.warning("project report service called")
     results =  _project_report_service(states)
-    return results
+    return results 
     
 
     

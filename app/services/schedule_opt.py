@@ -121,7 +121,7 @@ def _schedule_opt_service(state: list):
 def schedule_opt_service(states:list):
     logging.warning("schedule optimization service called")
     results =  _schedule_opt_service(states)
-    return results
+    return results 
     
 
     
