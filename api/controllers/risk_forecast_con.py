@@ -159,7 +159,7 @@ def cache_key(file_hash , task_name):
 
 def gen_rand():
     return ''.join(secrets.choice(string.digits) for _ in range(10))
-
+ 
 
 @api_view(['POST']) 
 def risk_forecast_controller(request):

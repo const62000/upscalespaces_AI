@@ -16,7 +16,7 @@ def status(request):
     if not data_key:
         return Response({'error': 'data_key is required'}, status=s.HTTP_400_BAD_REQUEST)
     
-    result = AsyncResult(task_id)
+    result = AsyncResult(task_id) 
     if result.ready():
         stored = cache.get(data_key)
         cache.set(f"{data_key.split("_")[-1]}:processing" , None , timeout=2)

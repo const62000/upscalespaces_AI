@@ -21,7 +21,7 @@ import string
 from django.core.cache import cache
 from dataclasses import dataclass 
 from enum import Enum
-
+ 
 
 encoding = tiktoken.get_encoding("cl100k_base")
 
