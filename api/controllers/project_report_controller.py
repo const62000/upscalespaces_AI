@@ -40,7 +40,7 @@ class project_report_status:
     num_dronereport_errors: int =0
     status: str = status_enum.PROCESSING_TASKS.value
     file_summary : str | None = None
-    latest_analysis : str | None = None
+    latest_analysis : str | None | dict = None
 
     def to_dict(self):
         return {
@@ -55,13 +55,47 @@ class project_report_status:
             "status": self.status
             }
     
-
+def save_tasks(other_tasks:list ,cache_key:str , xer_key:str , state: dict , report_dict: dict):
+    xer_key =  xer_key.split("_")[-1]
+    cache_key = cache_key.split("_")[-1]
+    for task_type in other_tasks:
+        out_dict  = report_dict
+        if task_type == "delay_analysis":
+            key =  f"delay_analysis_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].delay_analysis if hasattr(state.get("messages")[-1] , "delay_analysis") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type == "risk_forecast":
+            key =  f"risk_forecast_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].risk_forecast if hasattr(state.get("messages")[-1] , "risk_forecast") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type == "sch_opt":
+            key =  f"sch_opt_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] = state.get("messages")[-1].optimization_suggestions if hasattr(state.get("messages")[-1] , "optimization_suggestions") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type ==  "project_report":
+            key =  f"project_report_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].overall_review  if hasattr(state.get("messages")[-1] , "overall_review") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+                key = f"project_report_{cache_key}"
+                out_dict["key"] = key
+                cache.set(key , out_dict, timeout=60*60*10)
 @shared_task(queue = "report_queue" , rate_limit='10/m')  ##controls num of request, that can be made.. if it surpasses 5 it lines it up in queue
-def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, saved_img_paths: list = None ):
+def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, saved_img_paths: list = None  ,  video_path: str = None):
         from app.services.project_report import project_report_service
-        from app.services.image_analyzer import img_analyzer
         start_time = time.time()
-        summary_without_img = cache.get(xer_key)
+        summary_without_img = cache.get(f"{xer_key}:tasks_summary")
         if not summary_without_img:
             xer_doc = xer_parser(file_path)  #List
             structured_doc =  construct_table(xer_doc)
@@ -74,10 +108,14 @@ def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, s
             
             projectreportstatus =  project_report_status(max_tasks = len(tasks_list), key= check_if_processing_key)
             logging.warning(f"starting project summary for {len(tasks_list)} tasks")
-            states =  [{"messages" :  json.dumps(task), "task_id": task.get("task_id"), "mode": "task" , "status": projectreportstatus , "task_type": None} for task in tasks_list]
+            states =  [{"messages" :  json.dumps(task), "task_id": task.get("task_id"), "mode": "default" , "status": projectreportstatus , "task_type": "task"} for task in tasks_list]
             results =  project_report_service(states) 
             mapped_results =  list(map(lambda x: {"task_id": x.get("task_id"),
-                                              "analysis": x.get("messages")[-1].content,
+                                              "analysis":{"delay_analysis" : x.get("messages")[-1].model_dump().get("delay_analysis"),
+                                                          "risk_forecast": x.get("messages")[-1].model_dump().get("risk_forecast"),
+                                                          "optimization_suggestions": x.get("messages")[-1].model_dump().get("optimization_suggestions"),
+                                                          "overall_review": x.get("messages")[-1].model_dump().get("overall_review")
+                                                          },
                                               "error": x.get("messages")[-1].error if hasattr(x.get("messages")[-1], "error") else False
                                               }, results))
             projectreportstatus  = cache.get(check_if_processing_key)
@@ -88,80 +126,106 @@ def report_task(file_path: str , xer_key , cache_key ,check_if_processing_key, s
             
             projectreportstatus.status = status_enum.SUMMARIZING_PROJECT.value
             cache.set(check_if_processing_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+            cache.set(f"{xer_key}:tasks_summary" ,  mapped_results, timeout=60*60*10)  #cache task results w/o image summary
             
-            if len(encoding.encode(json.dumps(mapped_results))) < 100000:
+
+            if len(encoding.encode(json.dumps(mapped_results))) < 30000:
                 logging.warning("generating project summary")
-                summary_state =  {"messages" : json.dumps(mapped_results),  "mode": "summary_1" , "task_type": "proj_sum" ,  "status": projectreportstatus}
+                summary_state =  {"messages" : json.dumps(mapped_results) + f"\n total_tasks : {len(mapped_results)}",  "mode": "default" , "task_type": "proj_sum" ,   "status": projectreportstatus}
 
             else:
                 half_task_results =  len(mapped_results) // 4
                 tasks_results =  [mapped_results[:half_task_results]  , mapped_results[half_task_results: 2*half_task_results] ,
                                 mapped_results[2*half_task_results: 3*half_task_results] , mapped_results[3*half_task_results: ] ]
-                chunk_summary_state =  [{"messages" : json.dumps(results) , "mode": "summary_1" , "task_type": "proj_sum", "status": projectreportstatus } for results in tasks_results]
+                chunk_summary_state =  [{"messages" : json.dumps(results)+ f"\n total_tasks : {len(results)}" , "mode": "default" , "task_type": "proj_sum", "status": projectreportstatus } for results in tasks_results]
                 chunk_summary = project_report_service(chunk_summary_state)
                 mapped_chunk_results =  list(map(lambda x: {"analysis": x.get("messages")[-1].content,
                                                 "error": x.get("messages")[-1].error if hasattr(x.get("messages")[-1], "error") else False}, chunk_summary ))
                
-                summary_state =  {"messages" : json.dumps(mapped_chunk_results), "mode": "summary_1","task_type": "proj_sum", "status": projectreportstatus}
+                summary_state =  {"messages" : json.dumps(mapped_chunk_results) + f"\n total_tasks : {len(mapped_results)}", "mode": "default","task_type": "proj_sum", "status": projectreportstatus}
             
+            if saved_img_paths:
+                logging.warning('found attached imaged, resummarizing with image context')
+                summary_state["img_paths"] = saved_img_paths
+                summary_state["mode"] = "img"
+            if video_path:
+                logging.warning('found attached video, analyzing video for image context')
+                summary_state["video_path"] = video_path
+                summary_state["mode"] = "vid"
 
             final_summary =  project_report_service([summary_state])[0].get("messages")[-1] #pass summary_state to llm and get overall project delay analysis 
-            logging.warning("analysis completed  (no image) [project report]")
+            logging.warning("analysis completed [project report]")
             if not hasattr(final_summary , "error"):
                final_summary = final_summary.content
                projectreportstatus = cache.get(check_if_processing_key)
                projectreportstatus =  project_report_status(**projectreportstatus)
                projectreportstatus.file_summary = final_summary
-               cache.set(check_if_processing_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 10 hrs
-               cache.set(xer_key ,  projectreportstatus.to_dict() , timeout=60*60*5)  #cache final summary w/o image summary
-              
+
+                        
+               cache.set(check_if_processing_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 5 hrs
             else:
                 cache.set(check_if_processing_key , None , timeout=2)
                 return final_summary.content
         else:
-            logging.warning("cached proj summary found **[w/o image]")
-            final_summary =  summary_without_img
+            logging.warning("cached tasks summary found")
+            mapped_results =  summary_without_img
+            projectreportstatus =  project_report_status(max_tasks = len(mapped_results),
+                                                          key= check_if_processing_key,
+                                                          processed_tasks= len( mapped_results),
+                                                          num_task_errors=  list(map(lambda x: x.get("error") , mapped_results)).count(True),
+                                                          num_summary_errors= 0,
+                                                          num_dronereport_errors= 0,
+                                                          status= status_enum.SUMMARIZING_PROJECT.value,
+                                                          file_summary= None,
+                                                          latest_analysis=  None)
 
-            final_summary["key"] = check_if_processing_key
-            final_summary["status"] = status_enum.SUMMARIZING_PROJECT.value
-            final_summary["num_dronereport_errors"] = 0
-            final_summary["num_summary_errors"] = 0
-            cache.set(check_if_processing_key ,final_summary, timeout=60*60*10)
-        
-        if saved_img_paths:
-            projectreportstatus = cache.get(check_if_processing_key)
-            projectreportstatus =  project_report_status(**projectreportstatus)
-            
-            logging.warning('found attached imaged, resummarizing with image context')
-            summary_with_img =  cache.get(cache_key) 
-            if not summary_with_img:
-                final_summary =  img_analyzer([{"messages" : projectreportstatus.file_summary, 
-                                                "system_msg": prompt().summary_2() , 
-                                                "image_paths" : saved_img_paths,
-                                                "task_type": "proj_sum" ,
-                                                "status": projectreportstatus}])[0].get("messages")[-1]
-                logging.warning("analysis completed  (with image) [project report]")
-                [os.remove(f) for f in saved_img_paths]
-                if not hasattr(final_summary , "error"):
-                   cache.set(cache_key, final_summary.content, timeout=60*60*5) 
-                else:
-                   cache.set(check_if_processing_key , None , timeout=2)
 
-                final_summary = final_summary.content
+            cache.set(check_if_processing_key ,projectreportstatus, timeout=60*60*10)
+            if len(encoding.encode(json.dumps(mapped_results))) < 100000:
+                logging.warning("generating project summary")
+                summary_state =  {"messages" : json.dumps(mapped_results) + + f"\n total_tasks : {len(mapped_results)}",  "mode": "default" , "task_type": "proj_sum" ,   "status": projectreportstatus}
+
             else:
-                logging.warning("cached proj summary found **[with image]")
-                [os.remove(f) for f in saved_img_paths]
-                final_summary =  summary_with_img
+                half_task_results =  len(mapped_results) // 4
+                tasks_results =  [mapped_results[:half_task_results]  , mapped_results[half_task_results: 2*half_task_results] ,
+                                mapped_results[2*half_task_results: 3*half_task_results] , mapped_results[3*half_task_results: ] ]
+                chunk_summary_state =  [{"messages" : json.dumps(results) + f"\n total_tasks : {len(results)}", "mode": "default" , "task_type": "proj_sum", "status": projectreportstatus } for results in tasks_results]
+                chunk_summary = project_report_service(chunk_summary_state)
+                mapped_chunk_results =  list(map(lambda x: {"analysis": x.get("messages")[-1].content,
+                                                "error": x.get("messages")[-1].error if hasattr(x.get("messages")[-1], "error") else False}, chunk_summary ))
+               
+                summary_state =  {"messages" : json.dumps(mapped_chunk_results) + f"\n total_tasks : {len(mapped_results)}", "mode": "default","task_type": "proj_sum", "status": projectreportstatus}
+            
+            if saved_img_paths:
+                logging.warning('found attached imaged, resummarizing with image context')
+                summary_state["img_paths"] = saved_img_paths
+                summary_state["mode"] = "img"
+
+            final_summary =  project_report_service([summary_state])[0].get("messages")[-1] #pass summary_state to llm and get overall project delay analysis 
+            [os.remove(img_path) if os.path.exists(img_path) else None  for img_path in saved_img_paths ]
+            logging.warning("analysis completed [project report]")
+            if not hasattr(final_summary , "error"):
+               final_summary = final_summary.content
+               projectreportstatus = cache.get(check_if_processing_key)
+               projectreportstatus =  project_report_status(**projectreportstatus)
+               projectreportstatus.file_summary = final_summary
+               cache.set(check_if_processing_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 5 hrs
+            else:
+                cache.set(check_if_processing_key , None , timeout=2)
+                return final_summary.content
+            
+
         projectreportstatus = cache.get(check_if_processing_key)
         if projectreportstatus:
             projectreportstatus =  project_report_status(**projectreportstatus)
-            projectreportstatus.status = status_enum.COMPLETED.value
-            cache.set(cache_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+            #projectreportstatus.status = status_enum.COMPLETED.value
+            save_tasks(other_tasks = ["delay_analysis", "sch_opt" , "risk_forecast" , "project_report"] ,cache_key =cache_key , xer_key = xer_key ,state = final_summary , report_dict =  projectreportstatus.to_dict())
+            #cache.set(cache_key , projectreportstatus.to_dict() , timeout=60*60*10)  # cache for 10 hrs
         else:
-            cache.set(cache_key , projectreportstatus , timeout=60*60*10)  # cache for 10 hrs
+            cache.set(cache_key , projectreportstatus, timeout=60*60*10)
 
         end_time = time.time()
-        elapsed_time = round((end_time - start_time)/60 , 2)  #in mins
+        elapsed_time = round((end_time - start_time)/60 , 2)
         logging.warning(f"analysis completed [project_report] , analysis took {elapsed_time} mins")
         return final_summary
         
@@ -194,13 +258,23 @@ def progress_report_controller(request):
 
     file = request.FILES.get("file")
     images = request.FILES.getlist("image")
+    video =  request.FILES.get("video")
     
 
     if file and file.name.endswith(('.xer')):
-        filehash =  file_hash(file , [i for i in images[:10]]) if images else file_hash(file)
+        if images:
+            filehash =  file_hash(file , images[:10])
+        elif video:
+            filehash =  file_hash(file , [video])
+        elif images and video:
+            video = None
+            filehash =  file_hash(file , images[:10])   ##Intentionally skipped processing img and video together
+        else:
+            filehash =  file_hash(file)
+
         key = cache_key(filehash , "project_report")
 
-        check_if_processing_key = f"{key}:processing"
+        check_if_processing_key = f"{file_hash(file)}:processing"
 
         xer_hash = file_hash(file)
         xer_key = cache_key(xer_hash, "project_report")
@@ -236,7 +310,19 @@ def progress_report_controller(request):
                         saved_img_paths.append(imgfile_path)
                     else:
                        return Response({"error": "image file not valid must be png jpg or jpeg"}, status = status.HTTP_400_BAD_REQUEST)
-                t  = report_task.delay(file_path ,xer_key ,key , check_if_processing_key, saved_img_paths )
+                t  = report_task.delay(file_path ,xer_key ,key , check_if_processing_key, saved_img_paths = saved_img_paths )
+            elif  video:
+                if not video.name.endswith(('.mp4','.avi','.mkv')):
+                    return Response({"error": "video file not valid must be mp4, avi or mkv"}, status = status.HTTP_400_BAD_REQUEST)
+                tmp_dir = os.path.join(settings.BASE_DIR, 'tmp')
+                os.makedirs(tmp_dir, exist_ok=True)
+                logging.warning(f"Processing file: {video.name}")
+                videofile_path = os.path.join(tmp_dir, f"{gen_rand()}_{video.name}")
+                with open(videofile_path, 'wb+') as destination:
+                    for chunk in video.chunks():
+                        destination.write(chunk)
+                t  = report_task.delay( file_path ,xer_key , key , check_if_processing_key, video_path = videofile_path )
+            
             else:
                 t =  report_task.delay(file_path ,xer_key , key , check_if_processing_key)
 

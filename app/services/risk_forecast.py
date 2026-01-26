@@ -6,7 +6,7 @@ from typing_extensions import Annotated
 from dotenv import load_dotenv
 import logging
 from ..prompts.risk_forecast import prompt
-from .call_llm import call_llm, data_analyst, calculator
+from .call_llm_dspy import call_llm, data_analyst, calculator
 from langgraph.managed.is_last_step import RemainingSteps
 from langgraph.graph.message import add_messages
 from api.controllers.risk_forecast_con import risk_forecast_status
@@ -17,6 +17,7 @@ load_dotenv()
 class state_schema(MessagesState):
     mode : str    
     task_id: int | None
+    task_type: str | None
     status: risk_forecast_status
     remaining_steps: RemainingSteps
 
@@ -65,18 +66,15 @@ def tool_node(state: state_schema):
 
 def agent_node(state: state_schema):
     logging.warning("agent node called  [risk_forecast.py]")
-    msg = state.get("messages") #all tasks linked to wbs_id
-    mode = state.get("mode")  #task or summary
-    
-    system =  prompt().wbs() if mode == "task" else prompt().summary()
-    
-    tools =  [calculator ,  data_analyst,calendar_ref,
-              project_ref,  projwbs_ref ,  rsrc_ref,
-              task_rsrc_ref , task_pred_ref ,  task_ref]
-    
-    ai_msg = call_llm(mode= "default" , human_msg= f"{msg}" , system_msg= system)
+    msg = state.get("messages")
+    mode = state.get("mode")
+    task_id = state.get("task_id")
+    task_type =  state.get("task_type")
 
-    state["messages"].append(AIMessage(**(ai_msg)))
+    ai_msg = call_llm(human_input= f"{msg}", mode= mode , task_type= task_type)
+    ai_msg["content"] = ai_msg.get("risk_forecast")
+    ai_msg = AIMessage(**(ai_msg))
+    state["messages"].append(ai_msg)
     return state
 
 
@@ -89,18 +87,18 @@ def route(state: state_schema):
 
 def write_status_node(state: state_schema):
     logging.warning("write status node called  [risk_forecast.py]")
-    mode =  state.get("mode")
+    task_type =  state.get("task_type")
     status = state.get("status")
     message = state.get("messages")[-1]
-    if mode != "summary":
+    if task_type != "proj_sum":
         if hasattr(message, "error"):
             status.num_task_errors +=1
         status.processed_tasks +=1
     else:
         if hasattr(message, "error"):
             status.num_summary_errors +=1
-    status.latest_analysis = message.content
-    cache.set(status.key , status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+    status.latest_analysis = message.model_dump()
+    cache.set(status.key , status.to_dict() , timeout=60*60*10) 
     logging.warning(f"updated status in cache [risk forecast.py]")
     return state
 
@@ -118,7 +116,7 @@ app = workflow.compile()
 
 
 def _risk_service(state: list):
-    res =  app.batch(state , {"recursion_limit": 50 , "max_concurrency": len(state)} , return_exceptions = True )
+    res =  app.batch(state , {"recursion_limit": 20 , "max_concurrency": 4})
     return res
 
 def risk_service(states:list):

@@ -38,7 +38,7 @@ class delay_analysis_status:
     num_task_errors : int =0
     num_summary_errors : int =0
     status: str = status_enum.PROCESSING_TASKS.value
-    latest_analysis : str | None = None
+    latest_analysis : str | None | dict = None
 
     def to_dict(self):
         return {
@@ -50,14 +50,46 @@ class delay_analysis_status:
             "num_summary_errors": self.num_summary_errors,
             "status": self.status
             }
-    
+
+def save_tasks(other_tasks:list ,cache_key:str , state: dict , report_dict: dict):
+    xer_key =  cache_key.split("_")[-1]
+    for task_type in other_tasks:
+        out_dict  = report_dict
+        if task_type == "delay_analysis":
+            key =  f"delay_analysis_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].delay_analysis if hasattr(state.get("messages")[-1] , "delay_analysis") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type == "risk_forecast":
+            key =  f"risk_forecast_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].risk_forecast if hasattr(state.get("messages")[-1] , "risk_forecast") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type == "sch_opt":
+            key =  f"sch_opt_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] = state.get("messages")[-1].optimization_suggestions if hasattr(state.get("messages")[-1] , "optimization_suggestions") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)
+        if task_type ==  "project_report":
+            key =  f"project_report_{xer_key}"
+            out_dict["key"] = key
+            out_dict["latest_analysis"] =  state.get("messages")[-1].overall_review  if hasattr(state.get("messages")[-1] , "overall_review") else None
+            out_dict["status"] = status_enum.COMPLETED.value
+            if out_dict["latest_analysis"]:
+                cache.set(key , out_dict, timeout=60*60*10)  
 @shared_task(queue = "delay_queue" ,rate_limit='10/m')
 def delay_task(file_path: str , cache_key:str , check_if_processing_key:str):
         from app.services.delay_analysis import delay_analysis_service
         start_time = time.time()
         xer_doc = xer_parser(file_path)  #List
         structured_doc =  construct_table(xer_doc , mode = "delay")
-        tasks_list, tasks_grouped = structured_doc.unified() # list of unified table per task, grouped by wbs_id
+        tasks_list, tasks_grouped = structured_doc.unified()
         if os.path.exists(file_path):
            os.remove(file_path)
         if not tasks_list:
@@ -67,47 +99,50 @@ def delay_task(file_path: str , cache_key:str , check_if_processing_key:str):
 
         delay_status  =   delay_analysis_status(max_tasks = len(tasks_list), key= check_if_processing_key)
         
-        states =  [{"messages" :  json.dumps(task), "task_id": task.get("task_id"), "mode": "task" , "status": delay_status} for task in tasks_list]
-        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+        states =  [{"messages" :  json.dumps(task), "task_id": task.get("task_id"), "task_type": "task" , "mode": "default", "status": delay_status} for task in tasks_list]
+        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10)
         results  = delay_analysis_service(states)
         mapped_results =  list(map(lambda x: {"task_id": x.get("task_id"),
-                                              "analysis": x.get("messages")[-1].content,
+                                              "analysis":{"delay_analysis" : x.get("messages")[-1].model_dump().get("delay_analysis"),
+                                                          "risk_forecast": x.get("messages")[-1].model_dump().get("risk_forecast"),
+                                                          "optimization_suggestions": x.get("messages")[-1].model_dump().get("optimization_suggestions"),
+                                                          "overall_review": x.get("messages")[-1].model_dump().get("overall_review")
+                                                          },
                                               "error": x.get("messages")[-1].error if hasattr(x.get("messages")[-1], "error") else False
                                               }, results))
-        
         delay_status = cache.get(check_if_processing_key)
         delay_status =  delay_analysis_status(**delay_status)
         if delay_status.num_task_errors == delay_status.max_tasks:
             cache.set(check_if_processing_key , None , timeout=2)
             return "error: Failed to generate analysis at this time."
-        #->> after all wbs analysis ->> summarize project delay analysis
-
+        
         delay_status.status = status_enum.SUMMARIZING_PROJECT.value
-        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
-        if len(encoding.encode(json.dumps(mapped_results))) <= 100000:
-            summary_state =  {"messages" : json.dumps(mapped_results) , "mode": "summary" , "status": delay_status}
+        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10) 
+        if len(encoding.encode(json.dumps(mapped_results))) <= 30000:
+            summary_state =  {"messages" : json.dumps(mapped_results) + f"\n total_tasks : {len(mapped_results)}" , "task_type": "proj_sum" , "mode": "default" , "status": delay_status}
 
         else:
             half_task_results =  len(mapped_results) // 4
             tasks_results =  [mapped_results[:half_task_results]  , mapped_results[half_task_results: 2*half_task_results] ,
                               mapped_results[2*half_task_results: 3*half_task_results] , mapped_results[3*half_task_results: ] ]
-            chunk_summary_state =  [{"messages" : json.dumps(results) , "mode": "summary" , "status": delay_status} for results in tasks_results]
+            chunk_summary_state =  [{"messages" : json.dumps(results)+ f"\n total_tasks : {len(results)}" , "task_type": "proj_sum" , "mode": "default", "status": delay_status} for results in tasks_results]
             chunk_summary = delay_analysis_service(chunk_summary_state)
             mapped_chunk_results =  list(map(lambda x: {"analysis": x.get("messages")[-1].content,
                                               "error": x.get("messages")[-1].error if hasattr(x.get("messages")[-1], "error") else False}, chunk_summary ))
        
-            summary_state =  {"messages" : json.dumps(mapped_chunk_results), "mode": "summary", "status": delay_status}
+            summary_state =  {"messages" : json.dumps(mapped_chunk_results) + f"\n total_tasks : {len(mapped_results)}", "task_type": "proj_sum" , "mode": "default", "status": delay_status}
         
-        final_summary =  delay_analysis_service([summary_state])[0] #pass summary_state to llm and get overall project delay analysis 
+        final_summary =  delay_analysis_service([summary_state])[0] 
+        logging.warning(f"test delay analysis final summary: {final_summary}")
         delay_status = cache.get(check_if_processing_key)
         delay_status =  delay_analysis_status(**delay_status)
-        delay_status.status = status_enum.COMPLETED.value
-        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+        cache.set(check_if_processing_key , delay_status.to_dict() , timeout=60*60*10) 
         end_time = time.time()
-        elapsed_time = round((end_time - start_time)/60 , 2)  #in mins
+        elapsed_time = round((end_time - start_time)/60 , 2) 
         logging.warning(f"analysis completed [delay analysis] , analysis took {elapsed_time} mins")
         if not hasattr(final_summary.get("messages")[-1] , "error"):
-           cache.set(cache_key, delay_status.to_dict(), timeout=60*60*10)  # cache for 5 hrs
+           save_tasks(other_tasks = ["delay_analysis", "sch_opt" , "risk_forecast" , "project_report"] ,cache_key =cache_key , state = final_summary , report_dict =  delay_status.to_dict())
+           #cache.set(cache_key, delay_status.to_dict(), timeout=60*60*10)  # cache for 5 hrs
         else:
             cache.set(check_if_processing_key , None , timeout=2)
         return final_summary.get("messages")[-1].content
@@ -135,7 +170,7 @@ def delay_analysis_controller(request):
     if file and file.name.endswith(('.xer')):  
         filehash =  file_hash(file)
         key = cache_key(filehash , "delay_analysis")
-        check_if_processing_key = f"{key}:processing"
+        check_if_processing_key = f"{file_hash(file)}:processing"
         cached_result = cache.get(key)
         if cached_result:
             logging.warning("Returning cached result")

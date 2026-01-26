@@ -12,7 +12,9 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,6 +33,7 @@ DEBUG = os.environ.get("DEBUG", "True").lower() in {"1", "true", "yes"}
 
 GPT_KEY =  os.environ.get("OPENAI_API_KEY" , "sk..")
 GEMINI_KEY = os.environ.get("GOOGLE_API_KEY" , "AI..")
+ANYSCALE_API_KEY = os.environ.get("ANYSCALE_API_KEY" , "jR..")
 
 RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 ALLOWED_HOSTS = ["*"] if DEBUG else [
@@ -90,17 +93,13 @@ CACHES = {
 }
 RQ_QUEUES = {
     'gpt': {
-        'HOST': 'localhost',
-        'PORT': 6379,
-        'DB': 0,
-        'DEFAULT_TIMEOUT': 360,
+        'USE_REDIS_CACHE': 'default',
+        'DEFAULT_TIMEOUT': 60*60,
         'ASYNC': True
     },
     'gemini': {
-        'HOST': 'localhost',
-        'PORT': 6379,
-        'DB': 0,
-        'DEFAULT_TIMEOUT': 360,
+        'USE_REDIS_CACHE': 'default',
+        'DEFAULT_TIMEOUT': 60*60,
         'ASYNC': True
     }
 }

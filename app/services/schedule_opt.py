@@ -18,6 +18,7 @@ class state_schema(MessagesState):
     mode : str    
     task_id: int | None
     status: sch_opt_status
+    task_type: str | None
     remaining_steps: RemainingSteps
 
 
@@ -64,18 +65,15 @@ def tool_node(state: state_schema):
 
 def agent_node(state: state_schema):
     logging.warning("agent node called  [sch_opt.py]")
-    msg = state.get("messages") #all tasks linked to wbs_id
-    mode = state.get("mode")  #wbs or summary
-    
-    system =  prompt().wbs() if mode == "task" else prompt().summary()
-    
-    tools =  [calculator ,  data_analyst,calendar_ref,
-              project_ref,  projwbs_ref ,  rsrc_ref,
-              task_rsrc_ref , task_pred_ref ,  task_ref]
- 
-    ai_msg = call_llm(mode= "default" , human_msg= f"{msg}" , system_msg= system)
+    msg = state.get("messages")
+    mode = state.get("mode")
+    task_id = state.get("task_id")
+    task_type =  state.get("task_type")
 
-    state["messages"].append(AIMessage(**(ai_msg)))
+    ai_msg = call_llm(human_input= f"{msg}", mode= mode , task_type= task_type)
+    ai_msg["content"] = ai_msg.get("optimization_suggestions")
+    ai_msg = AIMessage(**(ai_msg))
+    state["messages"].append(ai_msg)
     return state
 
 def route(state: state_schema):
@@ -87,18 +85,18 @@ def route(state: state_schema):
 
 def write_status_node(state: state_schema):
     logging.warning("write status node called  [sch_opt.py]")
-    mode =  state.get("mode")
+    task_type =  state.get("task_type")
     status = state.get("status")
     message = state.get("messages")[-1]
-    if mode != "summary":
+    if task_type != "proj_sum":
         if hasattr(message, "error"):
             status.num_task_errors +=1
         status.processed_tasks +=1
     else:
         if hasattr(message, "error"):
             status.num_summary_errors +=1
-    status.latest_analysis = message.content
-    cache.set(status.key , status.to_dict() , timeout=60*60*10)  # cache for 10 hrs
+    status.latest_analysis = message.model_dump()
+    cache.set(status.key , status.to_dict() , timeout=60*60*10)
     logging.warning(f"updated status in cache [sch_opt.py]")
     return state
 
@@ -117,7 +115,7 @@ app = workflow.compile()
 
 
 def _schedule_opt_service(state: list):
-    res =  app.batch(state , {"recursion_limit": 50 , "max_concurrency": len(state)} , return_exceptions = True )
+    res =  app.batch(state , {"recursion_limit": 20 , "max_concurrency": 4})
     return res
 
 def schedule_opt_service(states:list):

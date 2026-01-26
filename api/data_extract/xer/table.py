@@ -97,8 +97,8 @@ class construct_table():
             task_obj = []
             task_names ={}
             for p in prj:
-                if self.mode =="delay" and p.get("status_code") == "TK_Complete":
-                    continue
+                #if self.mode =="delay" and p.get("status_code") == "TK_Complete":
+                    #continue
                 if p.get("task_type") == "TT_Task" or p.get("task_type") == "TT_Rsrc":
                     if p.get("task_name") in task_names.keys() and not None:
                         d1  =  datetime.strptime(task_names[p.get("task_name")] , "%Y-%m-%d %H:%M")
