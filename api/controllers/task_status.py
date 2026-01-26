@@ -6,7 +6,7 @@ from rest_framework import status as s
 from langchain_core.messages import AIMessage
 
 
-@api_view(['POST'])
+@api_view(['POST']) 
 def status(request):
     """Used to retrieve tasks from celery worker"""
     task_id = request.data.get('task_id')

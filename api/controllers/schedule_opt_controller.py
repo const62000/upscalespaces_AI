@@ -114,7 +114,7 @@ def sch_opt_task(file_path: str , cache_key, check_if_processing_key:str):
         if schopt_status.num_task_errors == schopt_status.max_tasks:
             cache.set(check_if_processing_key , None , timeout=2)
             return "error: Failed to generate analysis at this time."
-
+ 
         schopt_status.status = status_enum.SUMMARIZING_PROJECT.value
         cache.set(check_if_processing_key , schopt_status.to_dict() , timeout=60*60*10) 
         if len(encoding.encode(json.dumps(mapped_results))) <= 30000:

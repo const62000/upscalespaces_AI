@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view , throttle_classes
 from rest_framework.throttling import AnonRateThrottle
 from ..serializers.doc_serializer import docserializer
 from ..parsers.xer import xer_parser
-import logging
+import logging 
 from  django.conf import settings
 import os
 from django.core.cache import cache

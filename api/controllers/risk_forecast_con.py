@@ -161,7 +161,7 @@ def gen_rand():
     return ''.join(secrets.choice(string.digits) for _ in range(10))
 
 
-@api_view(['POST'])
+@api_view(['POST']) 
 def risk_forecast_controller(request):
     """Analyzes xer files for potential risks and recovery options"""
     parser_classes = [MultiPartParser , FormParser]
