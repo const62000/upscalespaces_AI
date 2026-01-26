@@ -96,7 +96,7 @@ class construct_table():
         for P in self.project_ids:
             task_obj = []
             task_names ={}
-            for p in prj:
+            for p in prj: 
                 #if self.mode =="delay" and p.get("status_code") == "TK_Complete":
                     #continue
                 if p.get("task_type") == "TT_Task" or p.get("task_type") == "TT_Rsrc":
