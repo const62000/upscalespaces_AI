@@ -1,7 +1,7 @@
 class prompt():
     def __init__(self):
         pass
-    
+     
     def calculator(self):
         
         return f'''
