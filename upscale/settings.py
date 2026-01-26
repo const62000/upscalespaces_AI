@@ -91,6 +91,7 @@ CACHES = {
         },
     }
 }
+
 RQ_QUEUES = {
     'gpt': {
         'USE_REDIS_CACHE': 'default',
@@ -103,6 +104,7 @@ RQ_QUEUES = {
         'ASYNC': True
     }
 }
+
 
 # Celery Configuration
 CELERY_BROKER_URL = REDIS_URL  # or 'amqp://localhost' for RabbitMQ
