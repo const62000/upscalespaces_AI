@@ -15,4 +15,4 @@ urlpatterns =  [
     path("schedule_opt" ,  s.schedule_opt_controller ,  name =  "schedule_opt"),
     path("video_analyzer" ,  p.progress_report_controller ,  name =  "video_analyzer"),
     path('status', task_status.status, name='task_status'),
-    ]
+    ] 
